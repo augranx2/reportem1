@@ -123,15 +123,19 @@ function paramNarrative(paramKey, paramShort, kelas, kelasEntries) {
     const highestLevel = Math.max(...breachPoints.map((p) => getStatus(p.raw, paramKey, kelas).level));
     const uniqueDates = new Set(breachPoints.map((p) => p.tanggal));
     const recurring = uniqueDates.size > 1;
-    const levelPhrase = highestLevel >= 4
-      ? "telah melampaui batas Syarat (spesifikasi) yang ditetapkan"
-      : highestLevel >= 3
-        ? "telah mencapai/melampaui Action Limit"
-        : "telah mencapai Alert Limit";
-    text += `Nilai tersebut ${levelPhrase} (Alert Limit ${limit.alert} CFU, Action Limit ${limit.action} CFU). `;
-    text += recurring
-      ? "Kejadian ini terjadi pada lebih dari satu tanggal pengujian sehingga memerlukan perhatian dan tindak lanjut lebih serius."
-      : "Namun kejadian tersebut hanya terjadi pada satu kali pengujian, tidak berulang pada pengujian berikutnya.";
+
+    if (highestLevel >= 4) {
+      text += `Nilai tersebut telah melampaui batas Syarat (spesifikasi) yang ditetapkan (Alert Limit ${limit.alert} CFU, Action Limit ${limit.action} CFU, Syarat ${limit.lessThan ? "< 1" : limit.syarat} CFU), sehingga dikategorikan sebagai penyimpangan. `;
+      text += recurring
+        ? "Kejadian ini terjadi pada lebih dari satu tanggal pengujian sehingga memerlukan investigasi lebih lanjut dan tindak lanjut segera."
+        : "Kejadian ini perlu segera ditindaklanjuti dengan investigasi dan pengujian ulang (re-sampling) pada titik terkait.";
+    } else {
+      const levelPhrase = highestLevel >= 3 ? "mencapai Action Limit" : "mencapai Alert Limit";
+      text += `Nilai tersebut ${levelPhrase} (Alert Limit ${limit.alert} CFU, Action Limit ${limit.action} CFU), namun masih berada di bawah batas Syarat (spesifikasi) sehingga belum dikategorikan sebagai penyimpangan. `;
+      text += recurring
+        ? "Kejadian ini tercatat pada lebih dari satu tanggal pengujian, sehingga perlu dievaluasi pada hasil pengujian periode berikutnya apakah nilainya masih tetap tinggi atau sudah menunjukkan perbaikan, termasuk meninjau kembali efektivitas sanitasi/higiene pada area terkait."
+        : "Kejadian ini hanya terjadi pada satu kali pengujian, dan dapat dievaluasi lebih lanjut pada hasil pengujian periode berikutnya untuk memastikan tidak berulang.";
+    }
   }
   return text;
 }
@@ -142,9 +146,9 @@ function classConclusion(kelas, breachesInClass) {
   }
   const highestLevel = Math.max(...breachesInClass.map((b) => b.level));
   if (highestLevel >= 4) {
-    return `Lingkungan Kelas ${kelas} terdapat titik yang melebihi batas persyaratan (spesifikasi) yang ditetapkan. Diperlukan investigasi lebih lanjut dan pengujian ulang (re-sampling) untuk memastikan kondisi lingkungan kembali terkendali.`;
+    return `Lingkungan Kelas ${kelas} terdapat titik yang melampaui batas persyaratan (spesifikasi) yang ditetapkan, sehingga dikategorikan sebagai penyimpangan. Diperlukan investigasi lebih lanjut dan pengujian ulang (re-sampling) untuk memastikan kondisi lingkungan kembali terkendali.`;
   }
-  return `Lingkungan Kelas ${kelas} masih berada dalam kondisi terkendali. Terdapat beberapa hasil yang mencapai Alert maupun Action Limit, namun kejadian tersebut tidak menunjukkan pola peningkatan yang konsisten dan tidak memengaruhi kondisi kelas ruangan lainnya.`;
+  return `Lingkungan Kelas ${kelas} masih berada dalam kondisi terkendali dan memenuhi persyaratan (spesifikasi) yang ditetapkan. Terdapat beberapa hasil yang mencapai Alert maupun Action Limit, namun karena masih di bawah batas Syarat, hal ini belum dikategorikan sebagai penyimpangan — cukup dievaluasi pada hasil pengujian periode berikutnya untuk memastikan tidak ada peningkatan berkelanjutan.`;
 }
 
 export function generateLocalNarrative({ facilityLabel, monthLabel, classes, entries }) {
@@ -197,19 +201,33 @@ export function generateLocalNarrative({ facilityLabel, monthLabel, classes, ent
   if (totalPointsAll === 0) {
     kesimpulanUmum = `Berdasarkan data yang diinput untuk fasilitas ${facilityLabel} pada periode ${monthLabel}, belum ada titik sampling yang dicatat. Diharapkan untuk melengkapi data pemantauan lingkungan sebelum melakukan evaluasi akhir.`;
   } else {
-    const intro = `Berdasarkan evaluasi trend data Environment Monitoring (EM) Viable periode ${monthLabel} pada fasilitas ${facilityLabel}, dapat disimpulkan bahwa kondisi lingkungan produksi pada seluruh kelas ruangan (${classes.map((k) => `Kelas ${k}`).join(", ")}) ${allBreaches.length === 0 ? "berada dalam keadaan terkendali dan memenuhi persyaratan CPOB yang berlaku." : "secara umum masih berada dalam keadaan terkendali, dengan beberapa titik pada kelas tertentu yang memerlukan perhatian lebih lanjut."}`;
+    const hasDeviation = allBreaches.some((b) => b.level >= 4);
+    const hasAlertAction = allBreaches.length > 0;
+
+    const intro = `Berdasarkan evaluasi trend data Environment Monitoring (EM) Viable periode ${monthLabel} pada fasilitas ${facilityLabel}, dapat disimpulkan bahwa kondisi lingkungan produksi pada seluruh kelas ruangan (${classes.map((k) => `Kelas ${k}`).join(", ")}) ${
+      !hasAlertAction
+        ? "berada dalam keadaan terkendali dan memenuhi persyaratan Standar CPOB yang berlaku."
+        : hasDeviation
+          ? "secara umum masih berada dalam keadaan terkendali, dengan satu atau lebih titik yang melampaui batas persyaratan (penyimpangan) dan memerlukan tindak lanjut."
+          : "secara umum masih berada dalam keadaan terkendali dan memenuhi persyaratan (spesifikasi) yang ditetapkan, dengan beberapa hasil yang mencapai Alert/Action Limit namun belum dikategorikan sebagai penyimpangan."
+    }`;
 
     const perClassRecap = classSummaries.map(({ kelas: k, breaches }) => {
       if (breaches.length === 0) {
         return `Pada Kelas ${k}, seluruh parameter monitoring memenuhi persyaratan tanpa adanya hasil yang mencapai Alert maupun Action Limit.`;
       }
       const rooms = Array.from(new Set(breaches.map((b) => b.roomName))).slice(0, 3).join(", ");
-      return `Pada Kelas ${k}, terdapat hasil pada area ${rooms} yang mencapai Alert/Action Limit, namun kejadian tersebut tidak menunjukkan tren peningkatan yang berkelanjutan.`;
+      const classHasDeviation = breaches.some((b) => b.level >= 4);
+      return classHasDeviation
+        ? `Pada Kelas ${k}, terdapat hasil pada area ${rooms} yang melampaui batas persyaratan (penyimpangan).`
+        : `Pada Kelas ${k}, terdapat hasil pada area ${rooms} yang mencapai Alert/Action Limit, namun masih di bawah batas Syarat sehingga belum dikategorikan sebagai penyimpangan.`;
     });
 
-    const closing = allBreaches.length === 0
+    const closing = !hasAlertAction
       ? `Secara keseluruhan, variasi hasil yang diperoleh masih mencerminkan kondisi operasional normal dan tidak menunjukkan adanya kecenderungan peningkatan cemaran mikrobiologi yang signifikan. Dengan demikian, program Environment Monitoring (EM) Viable periode ${monthLabel} masih efektif dalam memantau dan mengendalikan kondisi lingkungan produksi sehingga tetap mendukung proses pembuatan produk sesuai persyaratan mutu dan Standar CPOB tahun 2024 dan 2025 yang berlaku.`
-      : `Secara keseluruhan, diperlukan tindak lanjut berupa investigasi dan pemantauan yang lebih ketat pada titik-titik yang mengalami penyimpangan. Fasilitas ${facilityLabel} tetap dapat digunakan dengan catatan dilakukan penanganan dan re-sampling pada titik terkait hingga diperoleh hasil yang terkendali secara konsisten sesuai Standar CPOB tahun 2024 dan 2025 yang berlaku.`;
+      : hasDeviation
+        ? `Secara keseluruhan, diperlukan tindak lanjut berupa investigasi dan pengujian ulang (re-sampling) pada titik-titik yang mengalami penyimpangan. Fasilitas ${facilityLabel} tetap dapat digunakan dengan catatan dilakukan penanganan hingga diperoleh hasil yang terkendali secara konsisten sesuai Standar CPOB tahun 2024 dan 2025 yang berlaku.`
+        : `Secara keseluruhan, hasil yang mencapai Alert/Action Limit pada periode ini masih berada dalam batas persyaratan (spesifikasi) sehingga belum dikategorikan sebagai penyimpangan. Disarankan untuk mengevaluasi hasil pengujian pada periode berikutnya guna memastikan nilai tersebut sudah menurun/membaik atau masih menunjukkan tren yang sama, termasuk meninjau efektivitas sanitasi dan higiene personel pada area terkait. Dengan demikian, program Environment Monitoring (EM) Viable periode ${monthLabel} tetap dinilai efektif dalam memantau dan mengendalikan kondisi lingkungan produksi sesuai Standar CPOB tahun 2024 dan 2025 yang berlaku.`;
 
     kesimpulanUmum = [intro, ...perClassRecap, closing].join("\n\n");
   }

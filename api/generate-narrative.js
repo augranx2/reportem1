@@ -63,7 +63,9 @@ Kesimpulan
 
 (Lewati sub-bagian untuk parameter yang tidak ada datanya di kelas tersebut, mis. Kelas A/E tidak selalu punya ketiga parameter.)
 
-Untuk "kesimpulanUmum": tulis ringkasan akhir seluruh kelas pada periode ini (bukan per-kelas lagi, tapi rekap singkat tiap kelas digabung jadi satu narasi mengalir, 5-8 kalimat/beberapa paragraf pendek), kaitkan dengan kondisi bulan sebelumnya bila relevan, gunakan kata "terkendali" (bukan "state of control"), dan DIAKHIRI dengan pernyataan tegas apakah fasilitas ini memenuhi persyaratan Standar CPOB tahun 2024 dan 2025 yang berlaku serta status kualifikasi lingkungan periode ini.
+KETENTUAN PENTING soal istilah "penyimpangan": hasil yang mencapai Alert Limit atau Action Limit BUKAN penyimpangan — itu masih di bawah batas Syarat (spesifikasi), jadi masih memenuhi persyaratan. Untuk hasil seperti itu, JANGAN pakai kata "penyimpangan", dan jangan sarankan tindakan berat seperti investigasi RCA/CAPA formal atau re-sampling wajib. Cukup sebutkan bahwa nilai tersebut perlu dievaluasi pada hasil pengujian periode berikutnya untuk memastikan sudah membaik/menurun atau masih menunjukkan tren yang sama, dan boleh menyinggung peninjauan efektivitas sanitasi/higiene personel pada area terkait sebagai langkah pencegahan yang wajar dan mudah diterapkan di lapangan. Istilah "penyimpangan" HANYA dipakai kalau ada hasil yang benar-benar melampaui batas Syarat (spesifikasi) — dalam kasus itu baru sarankan investigasi dan pengujian ulang (re-sampling).
+
+Untuk "kesimpulanUmum": tulis ringkasan akhir seluruh kelas pada periode ini (bukan per-kelas lagi, tapi rekap singkat tiap kelas digabung jadi satu narasi mengalir, 5-8 kalimat/beberapa paragraf pendek), kaitkan dengan kondisi bulan sebelumnya bila relevan, gunakan kata "terkendali" (bukan "state of control"), terapkan ketentuan istilah "penyimpangan" di atas secara konsisten, dan DIAKHIRI dengan pernyataan tegas apakah fasilitas ini memenuhi persyaratan Standar CPOB tahun 2024 dan 2025 yang berlaku serta status kualifikasi lingkungan periode ini.
 
 Balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain) dengan struktur persis:
 {

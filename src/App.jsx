@@ -571,7 +571,12 @@ function EntryRow({ entry, masterRooms, onChange, onDelete, readOnly = false, ca
 
 function EntryEditor({ masterRooms, entries, setEntries, onSave, saving, canInput = false, canDeleteExisting = false, accessNote }) {
   const addRow = () => {
-    setEntries([{ id: uid(), tanggal: todayISO(), roomName: "", kelas: "", settle: "", contact: "", air: "", _custom: true, _sourceCode: null }, ...entries]);
+    // Tanggal baris baru ikut tanggal baris paling atas (baris terakhir yang
+    // sudah diinput sebelumnya) — bukan selalu tanggal hari ini. Ini menghemat
+    // waktu saat input data historis/bulanan dalam jumlah banyak, karena
+    // biasanya beberapa baris berturut-turut memang untuk tanggal yang sama.
+    const defaultTanggal = entries[0]?.tanggal || todayISO();
+    setEntries([{ id: uid(), tanggal: defaultTanggal, roomName: "", kelas: "", settle: "", contact: "", air: "", _custom: true, _sourceCode: null }, ...entries]);
   };
   const isExistingRow = (e) => typeof e.id === "string" && e.id.startsWith("row-");
   return (
