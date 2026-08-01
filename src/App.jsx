@@ -919,12 +919,16 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
 function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, session, token }) {
   const facility = FACILITIES.find((f) => f.key === facilityKey);
 
-  const canInputQC = hasAccess(session, "Staff", "QC");
-  const canDeleteQC = hasAccess(session, "Supervisor", "QC");
+  // Input & hapus data mentah: QC (Staff ke atas) ATAU QA (Supervisor ke atas,
+  // supaya QA bisa mengintervensi/koreksi kalau ada salah input dari QC)
+  const canInputQC = hasAccess(session, "Staff", "QC") || hasAccess(session, "Supervisor", "QA");
+  const canDeleteQC = hasAccess(session, "Supervisor", "QC") || hasAccess(session, "Supervisor", "QA");
   const canEditQA = hasAccess(session, "Supervisor", "QA");
   const canApproveFinal = hasAccess(session, "Manager", "QA");
-  const isQA = session?.departemen === "QA";
-  const isQC = session?.departemen === "QC";
+  const isAdmin = session?.role === "Administrator";
+  // Administrator melihat & bisa akses SEMUA tombol, lintas departemen
+  const isQA = isAdmin || session?.departemen === "QA";
+  const isQC = isAdmin || session?.departemen === "QC";
   const [mode, setMode] = useState("pengkajian"); // 'pengkajian' | 'reportEM'
 
   const [loading, setLoading] = useState(true);
@@ -1191,7 +1195,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
       <div className="no-print mb-5">
         <EntryEditor masterRooms={masterRooms} entries={entries} setEntries={setEntries} onSave={saveEntriesOnly} saving={saving}
           canInput={canInputQC} canDeleteExisting={canDeleteQC}
-          accessNote={session ? "Hanya Staff/Supervisor/Manager QC yang bisa mengisi data" : "Login untuk mengisi data"} />
+          accessNote={session ? "Staff/Supervisor/Manager QC atau Supervisor/Manager QA yang bisa mengisi data" : "Login untuk mengisi data"} />
       </div>
 
       <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">

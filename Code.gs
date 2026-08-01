@@ -388,8 +388,12 @@ function getActivityLog_(token, month, facilityLabel) {
 // ---------------------------------------------------------------------------
 
 function saveEntriesAuthed_(session, facilityKey, month, entries) {
-  if (!requireRole_(session, "Staff", "QC")) {
-    return { error: "Hanya Staff/Supervisor/Manager QC yang boleh mengisi data pengujian." };
+  // QC (Staff ke atas) boleh input rutin. QA (Supervisor ke atas) juga boleh
+  // input/koreksi — untuk kebutuhan intervensi saat mengkaji data yang salah.
+  const isQCInput = requireRole_(session, "Staff", "QC");
+  const isQAInput = requireRole_(session, "Supervisor", "QA");
+  if (!isQCInput && !isQAInput) {
+    return { error: "Hanya Staff/Supervisor/Manager QC, atau Supervisor/Manager QA, yang boleh mengisi data pengujian." };
   }
   const cfg = FACILITIES[facilityKey];
   if (!cfg) return { error: "Fasilitas tidak dikenal: " + facilityKey };
@@ -399,8 +403,9 @@ function saveEntriesAuthed_(session, facilityKey, month, entries) {
   const submittedIds = {};
   entries.forEach(function (e) { submittedIds[e.id] = true; });
   const deletedRows = before.filter(function (e) { return !submittedIds[e.id]; });
-  if (deletedRows.length > 0 && !requireRole_(session, "Supervisor", "QC")) {
-    return { error: "Staff tidak bisa menghapus data yang sudah tersimpan. Hubungi Supervisor/Manager QC untuk menghapus baris." };
+  const canDelete = requireRole_(session, "Supervisor", "QC") || requireRole_(session, "Supervisor", "QA");
+  if (deletedRows.length > 0 && !canDelete) {
+    return { error: "Staff tidak bisa menghapus data yang sudah tersimpan. Hubungi Supervisor/Manager QC atau QA untuk menghapus baris." };
   }
 
   const result = saveEntries_(facilityKey, month, entries);
