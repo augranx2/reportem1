@@ -148,12 +148,12 @@ function doPost(e) {
         break;
       case "saveReportEM":
         result = withAuth_(body.token, function (session) {
-          return saveReportEMAuthed_(session, body.facility, body.tanggal, body.noKontrolMedia, body.tanggalPembacaan, body.analisManualNama);
+          return saveReportEMAuthed_(session, body.facility, body.tanggal, body.noKontrolMedia, body.tanggalPembacaan);
         });
         break;
       case "approveReportEM":
         result = withAuth_(body.token, function (session) {
-          return approveReportEMAuthed_(session, body.facility, body.tanggal, body.diperiksaManualNama);
+          return approveReportEMAuthed_(session, body.facility, body.tanggal);
         });
         break;
       default:
@@ -493,7 +493,7 @@ function findReportEMRow_(facilityLabel, tanggal) {
   const sheet = getReportEMSheet_();
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return { sheet: sheet, rowIndex: -1, row: null };
-  const values = sheet.getRange(2, 1, lastRow - 1, 14).getValues();
+  const values = sheet.getRange(2, 1, lastRow - 1, 12).getValues();
   for (let i = 0; i < values.length; i++) {
     if (values[i][0] === facilityLabel && formatDate_(values[i][1]) === tanggal) {
       return { sheet: sheet, rowIndex: i + 2, row: values[i] };
@@ -518,13 +518,13 @@ function getReportEM_(facilityKey, tanggal) {
     formNo: row[4] || REPORT_EM_FORM_NO,
     prevFormNo: REPORT_EM_PREV_FORM_NO,
     prevTglBerlaku: REPORT_EM_PREV_TGL_BERLAKU,
-    analis: { nama: row[5] || "", username: row[6] || "", tanggal: formatDate_(row[7]), manualNama: row[12] || "" },
-    diperiksa: { nama: row[8] || "", username: row[9] || "", tanggal: formatDate_(row[10]), manualNama: row[13] || "" },
+    analis: { nama: row[5] || "", username: row[6] || "", tanggal: formatDate_(row[7]) },
+    diperiksa: { nama: row[8] || "", username: row[9] || "", tanggal: formatDate_(row[10]) },
     updatedAt: row[11],
   };
 }
 
-function saveReportEMAuthed_(session, facilityKey, tanggal, noKontrolMedia, tanggalPembacaan, analisManualNama) {
+function saveReportEMAuthed_(session, facilityKey, tanggal, noKontrolMedia, tanggalPembacaan) {
   if (!requireRole_(session, "Staff", "QC")) {
     return { error: "Hanya Staff/Supervisor/Manager QC yang boleh mengisi Report Hasil EM." };
   }
@@ -541,13 +541,11 @@ function saveReportEMAuthed_(session, facilityKey, tanggal, noKontrolMedia, tang
   const diperiksaNama = isNew ? "" : (found.row[8] || "");
   const diperiksaUsername = isNew ? "" : (found.row[9] || "");
   const diperiksaTanggal = isNew ? "" : (found.row[10] || "");
-  const diperiksaManualNamaExisting = isNew ? "" : (found.row[13] || "");
 
   const rowValues = [
     cfg.label, tanggal, noKontrolMedia || "", tanggalPembacaan || "", REPORT_EM_FORM_NO,
     analisNama, analisUsername, analisTanggal,
     diperiksaNama, diperiksaUsername, diperiksaTanggal, now,
-    analisManualNama || "", diperiksaManualNamaExisting,
   ];
 
   if (isNew) {
@@ -565,7 +563,7 @@ function saveReportEMAuthed_(session, facilityKey, tanggal, noKontrolMedia, tang
   return getReportEM_(facilityKey, tanggal);
 }
 
-function approveReportEMAuthed_(session, facilityKey, tanggal, diperiksaManualNama) {
+function approveReportEMAuthed_(session, facilityKey, tanggal) {
   if (!requireRole_(session, "Supervisor", "QC")) {
     return { error: "Hanya Supervisor/Manager QC yang boleh menyetujui Report Hasil EM." };
   }
@@ -580,7 +578,6 @@ function approveReportEMAuthed_(session, facilityKey, tanggal, diperiksaManualNa
     cfg.label, tanggal, row[2] || "", row[3] || "", row[4] || REPORT_EM_FORM_NO,
     row[5] || "", row[6] || "", row[7] || "",
     session.nama, session.username, formatDate_(now), now,
-    row[12] || "", diperiksaManualNama || "",
   ];
   found.sheet.getRange(found.rowIndex, 1, 1, rowValues.length).setValues([rowValues]);
 

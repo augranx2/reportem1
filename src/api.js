@@ -86,12 +86,12 @@ export function fetchReportEM(facility, tanggal) {
   return apiGet({ action: "reportEM", facility, tanggal });
 }
 
-export function saveReportEM(facility, tanggal, noKontrolMedia, tanggalPembacaan, analisManualNama, token) {
-  return apiPost({ action: "saveReportEM", facility, tanggal, noKontrolMedia, tanggalPembacaan, analisManualNama, token });
+export function saveReportEM(facility, tanggal, noKontrolMedia, tanggalPembacaan, token) {
+  return apiPost({ action: "saveReportEM", facility, tanggal, noKontrolMedia, tanggalPembacaan, token });
 }
 
-export function approveReportEM(facility, tanggal, diperiksaManualNama, token) {
-  return apiPost({ action: "approveReportEM", facility, tanggal, diperiksaManualNama, token });
+export function approveReportEM(facility, tanggal, token) {
+  return apiPost({ action: "approveReportEM", facility, tanggal, token });
 }
 
 // Vercel Serverless Function (bukan Apps Script) — jalan di domain website sendiri,

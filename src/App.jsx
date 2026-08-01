@@ -660,12 +660,14 @@ function keteranganMS(entry) {
 
 function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token, onBack }) {
   const facility = FACILITIES.find((f) => f.key === facilityKey);
+  // Tgl Berlaku FM.QC.062/R3 — sengaja dikosongkan dulu sampai revisi ini
+  // disahkan resmi secara fisik di kantor. Isi tanggalnya di sini nanti
+  // (mis. "01 September 2026") begitu sudah ditetapkan.
+  const tglBerlakuR3 = "";
   const [tanggal, setTanggal] = useState("");
   const [meta, setMeta] = useState(null);
   const [noKontrolMedia, setNoKontrolMedia] = useState("");
   const [tanggalPembacaan, setTanggalPembacaan] = useState("");
-  const [analisManualNama, setAnalisManualNama] = useState("");
-  const [diperiksaManualNama, setDiperiksaManualNama] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -697,8 +699,6 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
         setMeta(res);
         setNoKontrolMedia(res.noKontrolMedia || "");
         setTanggalPembacaan(res.tanggalPembacaan || "");
-        setAnalisManualNama(res.analis?.manualNama || "");
-        setDiperiksaManualNama(res.diperiksa?.manualNama || "");
       } catch (err) {
         if (!cancelled) setErrorMsg("Gagal memuat Report Hasil EM: " + err.message);
       } finally {
@@ -718,10 +718,9 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
     setSaving(true);
     setErrorMsg("");
     try {
-      const res = await apiSaveReportEM(facilityKey, tanggal, noKontrolMedia, tanggalPembacaan, analisManualNama, token);
+      const res = await apiSaveReportEM(facilityKey, tanggal, noKontrolMedia, tanggalPembacaan, token);
       if (res.error) throw new Error(res.error);
       setMeta(res);
-      setAnalisManualNama(res.analis?.manualNama || "");
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
@@ -733,10 +732,9 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
     setApproving(true);
     setErrorMsg("");
     try {
-      const res = await apiApproveReportEM(facilityKey, tanggal, diperiksaManualNama, token);
+      const res = await apiApproveReportEM(facilityKey, tanggal, token);
       if (res.error) throw new Error(res.error);
       setMeta(res);
-      setDiperiksaManualNama(res.diperiksa?.manualNama || "");
     } catch (err) {
       setErrorMsg(err.message);
     } finally {
@@ -750,6 +748,23 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
   const analis = meta?.analis || { nama: "", tanggal: "" };
   const diperiksa = meta?.diperiksa || { nama: "", tanggal: "" };
   const isApproved = !!diperiksa?.nama;
+
+  // Lapisan pengaman: walau tombolnya sudah disembunyikan dari QA di halaman
+  // sebelumnya, tetap dicek ulang di sini supaya panel ini benar-benar
+  // tidak bisa diakses selain oleh QC (atau Administrator).
+  const allowedHere = session?.role === "Administrator" || session?.departemen === "QC";
+  if (!allowedHere) {
+    return (
+      <div className="mx-auto max-w-2xl p-6">
+        <button onClick={onBack} className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
+          <ChevronLeft size={16} /> Kembali ke Pengkajian EM
+        </button>
+        <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          Report Hasil EM (FM.QC.062) khusus untuk akun departemen QC.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-5xl p-6 print:max-w-none print:p-0">
@@ -789,7 +804,7 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
             </div>
             <div className="text-right text-xs text-slate-500">
               <p>No. : <span className="font-semibold text-slate-700">{formNo}</span></p>
-              <p>Tgl Berlaku : {meta?.analis?.tanggal ? fullDateID(meta.analis.tanggal) : "-"}</p>
+              <p>Tgl Berlaku : {tglBerlakuR3 || "-"}</p>
               <p>Menggantikan No. : {prevFormNo}</p>
               <p>Tgl Berlaku : {prevTglBerlaku}</p>
             </div>
@@ -864,29 +879,19 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
 
           <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div>
-              <p className="mb-1 text-xs font-semibold uppercase text-slate-400">Diperiksa oleh (Analis)</p>
+              <p className="mb-1 text-xs font-semibold uppercase text-slate-400">Diperiksa oleh</p>
               <div className="mb-2 flex h-20 items-center justify-center rounded border border-dashed border-slate-300 print:h-24">
                 <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
               </div>
-              {canInput && !isApproved ? (
-                <input type="text" value={analisManualNama} onChange={(ev) => setAnalisManualNama(ev.target.value)}
-                  placeholder="Nama analis yang memeriksa"
-                  className="only-screen mb-1 w-full rounded border border-slate-300 px-2 py-1 text-sm font-medium focus:border-blue-400 focus:outline-none" />
-              ) : null}
-              <p className={canInput && !isApproved ? "only-print text-sm font-medium" : "text-sm font-medium"}>{analisManualNama || analis.nama || "-"}</p>
+              <p className="text-sm font-medium">{analis.nama || "-"}</p>
               <p className="text-xs text-slate-400">{analis.tanggal ? fullDateID(analis.tanggal) : ""}</p>
             </div>
             <div>
-              <p className="mb-1 text-xs font-semibold uppercase text-slate-400">Mengetahui (Manager QC)</p>
+              <p className="mb-1 text-xs font-semibold uppercase text-slate-400">Mengetahui</p>
               <div className="mb-2 flex h-20 items-center justify-center rounded border border-dashed border-slate-300 print:h-24">
                 <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
               </div>
-              {canApprove && !isApproved ? (
-                <input type="text" value={diperiksaManualNama} onChange={(ev) => setDiperiksaManualNama(ev.target.value)}
-                  placeholder="Nama Manager/Supervisor QC yang menyetujui"
-                  className="only-screen mb-1 w-full rounded border border-slate-300 px-2 py-1 text-sm font-medium focus:border-blue-400 focus:outline-none" />
-              ) : null}
-              <p className={canApprove && !isApproved ? "only-print text-sm font-medium" : "text-sm font-medium"}>{diperiksaManualNama || diperiksa.nama || "-"}</p>
+              <p className="text-sm font-medium">{diperiksa.nama || "-"}</p>
               <p className="text-xs text-slate-400">{diperiksa.tanggal ? fullDateID(diperiksa.tanggal) : ""}</p>
             </div>
           </div>
