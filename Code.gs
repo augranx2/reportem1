@@ -19,6 +19,10 @@
  *   Audit_Log  : Waktu | Username | Nama | Role | Departemen | Aksi | Fasilitas | Bulan | Detail
  *
  * Cara pakai User_Roles: isi Nama/Role/Departemen/Username seperti biasa.
+ * Kolom Role diisi salah satu dari: Staff, Supervisor, Manager, Assistant Manager,
+ * Administrator. "Assistant Manager" punya hak persis sama seperti Manager
+ * (di departemen yang sama). "Administrator" punya akses penuh ke semua fitur
+ * dan lintas departemen (QC maupun QA), berapa pun isi kolom Departemen-nya.
  * Untuk set/reset password seseorang, ketik password barunya (teks biasa)
  * di kolom PasswordBaru baris orang itu — begitu ada orang login (siapa
  * saja), sistem otomatis mengubahnya jadi PasswordHash+Salt lalu
@@ -70,7 +74,7 @@ const REPORT_EM_FORM_NO = "FM.QC.062/R3";
 const REPORT_EM_PREV_FORM_NO = "FM.QC.062/R2";
 const REPORT_EM_PREV_TGL_BERLAKU = "27 September 2022";
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 jam
-const ROLE_LEVEL = { Staff: 1, Supervisor: 2, Manager: 3 };
+const ROLE_LEVEL = { Staff: 1, Supervisor: 2, Manager: 3, "Assistant Manager": 3, Administrator: 4 };
 
 // ---------------------------------------------------------------------------
 // ENTRY POINTS
@@ -334,6 +338,7 @@ function whoami_(token) {
 }
 
 function requireRole_(session, minRole, departemen) {
+  if (session.role === "Administrator") return true; // akses penuh, lintas departemen
   const level = ROLE_LEVEL[session.role] || 0;
   const minLevel = ROLE_LEVEL[minRole] || 99;
   if (level < minLevel) return false;

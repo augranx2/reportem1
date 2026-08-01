@@ -3,7 +3,7 @@ import { login as apiLogin, logout as apiLogout, whoami as apiWhoami } from "./a
 
 const STORAGE_KEY = "em_viable_session";
 
-const ROLE_LEVEL = { Staff: 1, Supervisor: 2, Manager: 3 };
+const ROLE_LEVEL = { Staff: 1, Supervisor: 2, Manager: 3, "Assistant Manager": 3, Administrator: 4 };
 
 function readStored() {
   try {
@@ -85,6 +85,7 @@ export function roleLevel(role) {
 
 export function hasAccess(session, minRole, departemen) {
   if (!session) return false;
+  if (session.role === "Administrator") return true; // akses penuh, lintas departemen
   if (departemen && session.departemen !== departemen) return false;
   return roleLevel(session.role) >= roleLevel(minRole);
 }
