@@ -781,9 +781,7 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
         <div className="rounded-xl border border-slate-300 bg-white p-6 print-card">
           <div className="mb-4 flex items-start justify-between border-b border-slate-300 pb-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full border border-slate-200 bg-white p-1.5 shadow-sm">
-                <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-full w-full object-contain" />
-              </div>
+              <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-14 w-14 shrink-0 object-contain" />
               <div>
                 <p className="text-xs font-semibold text-slate-500">PT. Rama Emerald Multi Sukses</p>
                 <h2 className="text-lg font-bold uppercase text-slate-800">Pemantauan Lingkungan Viabel</h2>
@@ -1162,9 +1160,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
         <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-blue-900 px-5 py-4">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
             <div className="flex items-start gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white p-1.5 shadow-sm">
-                <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-full w-full object-contain" />
-              </div>
+              <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-12 w-12 shrink-0 object-contain brightness-0 invert" />
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-blue-300">PT. Rama Emerald Multi Sukses — QA</p>
                 <h2 className="text-xl font-bold text-white">Pengkajian Trend Data Environment Monitoring (EM) Viable</h2>
