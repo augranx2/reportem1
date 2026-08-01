@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ReferenceLine, ResponsiveContainer,
@@ -28,6 +29,33 @@ const FACILITIES = [
 ];
 
 const CLASS_ORDER = ["E", "D", "C", "B", "A"];
+
+/* ========================================================================= QR VERIFIKASI TANDA TANGAN
+   Setiap tanda tangan/approval (Dikaji Oleh, Mengetahui Pengkajian EM,
+   Diperiksa oleh & Mengetahui Report Hasil EM) dapat di-scan untuk membuka
+   halaman /verify yang mengambil data langsung dari sistem (live), bukan dari
+   gambar PDF-nya — supaya PDF yang sudah dicetak tidak bisa dipalsukan datanya.
+   Tidak perlu tab/kolom baru di spreadsheet: halaman verifikasi cukup membaca
+   ulang data Pengkajian EM / Report Hasil EM yang sudah ada lewat action GET
+   publik yang sama (action=report / action=reportEM), yang memang sudah bisa
+   diakses tanpa login. */
+function buildVerifyUrl(params) {
+  const qs = new URLSearchParams(params).toString();
+  return `${window.location.origin}/verify?${qs}`;
+}
+
+function VerifyQR({ type, facility, period, slot, size = 84 }) {
+  const params = type === "report"
+    ? { type, facility, tanggal: period, slot }
+    : { type, facility, month: period, slot };
+  const url = buildVerifyUrl(params);
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <QRCodeSVG value={url} size={size} level="M" bgColor="#ffffff" fgColor="#0f172a" />
+      <span className="text-center text-[9px] leading-tight text-slate-400">Scan untuk verifikasi</span>
+    </div>
+  );
+}
 
 const PARAM_DEFS = [
   { key: "settle", label: "Cawan Papar (Settle Plate)", short: "Settle Plate" },
@@ -811,7 +839,7 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
           </div>
 
           <div className="mb-4 grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">
-            <p><span className="text-slate-500">Nama Bangunan</span> : <span className="font-medium">{facility.label}</span></p>
+            <p><span className="text-slate-500">Nama Fasilitas</span> : <span className="font-medium">{facility.label}</span></p>
             <p><span className="text-slate-500">Tanggal Pemeriksaan</span> : <span className="font-medium">{fullDateID(tanggal)}</span></p>
             <p className="flex items-center gap-2">
               <span className="text-slate-500">No. Kontrol Media</span> :
@@ -880,16 +908,24 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
           <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div>
               <p className="mb-1 text-xs font-semibold uppercase text-slate-400">Diperiksa oleh</p>
-              <div className="mb-2 flex h-20 items-center justify-center rounded border border-dashed border-slate-300 print:h-24">
-                <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
+              <div className="mb-2 flex h-24 items-center justify-center rounded border border-dashed border-slate-300 print:h-28">
+                {analis.nama ? (
+                  <VerifyQR type="report" facility={facilityKey} period={tanggal} slot="analis" size={64} />
+                ) : (
+                  <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
+                )}
               </div>
               <p className="text-sm font-medium">{analis.nama || "-"}</p>
               <p className="text-xs text-slate-400">{analis.tanggal ? fullDateID(analis.tanggal) : ""}</p>
             </div>
             <div>
               <p className="mb-1 text-xs font-semibold uppercase text-slate-400">Mengetahui</p>
-              <div className="mb-2 flex h-20 items-center justify-center rounded border border-dashed border-slate-300 print:h-24">
-                <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
+              <div className="mb-2 flex h-24 items-center justify-center rounded border border-dashed border-slate-300 print:h-28">
+                {diperiksa.nama ? (
+                  <VerifyQR type="report" facility={facilityKey} period={tanggal} slot="diperiksa" size={64} />
+                ) : (
+                  <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
+                )}
               </div>
               <p className="text-sm font-medium">{diperiksa.nama || "-"}</p>
               <p className="text-xs text-slate-400">{diperiksa.tanggal ? fullDateID(diperiksa.tanggal) : ""}</p>
@@ -1290,7 +1326,11 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
             <div key={field} className="rounded-lg border border-slate-200 p-3">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
               <div className="mb-3 flex h-24 items-center justify-center rounded border border-dashed border-slate-300 print:h-28">
-                <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
+                {signoff[field]?.nama ? (
+                  <VerifyQR type="pengkajian" facility={facilityKey} period={monthKey} slot={field} size={68} />
+                ) : (
+                  <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
+                )}
               </div>
               {signoff[field]?.nama ? (
                 <div className="space-y-1 text-sm">
@@ -1464,9 +1504,117 @@ function ActivityLogPage({ token, onBack }) {
   );
 }
 
+/* ========================================================================= VERIFIKASI TANDA TANGAN (halaman publik, dibuka lewat scan QR) */
+
+function VerifyPage() {
+  const params = useMemo(() => new URLSearchParams(window.location.search), []);
+  const type = params.get("type"); // "report" | "pengkajian"
+  const facilityKey = params.get("facility");
+  const slot = params.get("slot");
+  const period = type === "report" ? params.get("tanggal") : params.get("month");
+  const facility = FACILITIES.find((f) => f.key === facilityKey);
+
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState(null);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (!type || !facilityKey || !period || !slot || !facility) {
+        setErrorMsg("Kode QR tidak lengkap atau tidak dikenali.");
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = type === "report" ? await fetchReportEM(facilityKey, period) : await fetchReport(facilityKey, period);
+        if (!cancelled) setData(res);
+      } catch (err) {
+        if (!cancelled) setErrorMsg(err.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  let signer = null;
+  let docLabel = "";
+  let periodLabel = "";
+  if (data && !data.error) {
+    if (type === "report") {
+      docLabel = "Report Hasil EM (FM.QC.062)";
+      periodLabel = "Tanggal Pemeriksaan: " + fullDateID(period);
+      signer = slot === "analis"
+        ? { nama: data.analis?.nama, label: "Diperiksa oleh (Analis)", tanggal: data.analis?.tanggal }
+        : { nama: data.diperiksa?.nama, label: "Mengetahui (QC)", tanggal: data.diperiksa?.tanggal };
+    } else {
+      docLabel = "Pengkajian Trend Data EM Viable (QA.FM.156)";
+      periodLabel = "Periode: " + monthLabel(period);
+      signer = slot === "dinilai"
+        ? { nama: data.signoff?.dinilai?.nama, label: "Dikaji Oleh", tanggal: data.signoff?.dinilai?.tanggal, jabatan: data.signoff?.dinilai?.jabatan }
+        : { nama: data.signoff?.diperiksa?.nama, label: "Mengetahui (Final)", tanggal: data.signoff?.diperiksa?.tanggal, jabatan: data.signoff?.diperiksa?.jabatan };
+    }
+  }
+  const isValid = !!signer?.nama;
+  const [periodLabelKey, periodLabelVal] = periodLabel.split(/:\s(.+)/);
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+      <div className="w-full max-w-sm">
+        <div className="mb-4 flex flex-col items-center gap-1.5">
+          <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-14 w-14 object-contain" />
+          <h1 className="text-center text-base font-bold text-slate-800">Verifikasi Dokumen EM Viable</h1>
+          <p className="text-center text-xs text-slate-500">PT. Rama Emerald Multi Sukses</p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          {loading ? (
+            <p className="py-4 text-center text-sm text-slate-400">Memeriksa data…</p>
+          ) : errorMsg || !facility || data?.error ? (
+            <div className="flex flex-col items-center gap-2 py-2 text-center">
+              <AlertTriangle className="text-red-500" size={28} />
+              <p className="text-sm font-semibold text-red-600">Kode tidak valid</p>
+              <p className="text-xs text-slate-500">{errorMsg || data?.error || "Dokumen tidak ditemukan di sistem."}</p>
+            </div>
+          ) : !isValid ? (
+            <div className="flex flex-col items-center gap-2 py-2 text-center">
+              <AlertTriangle className="text-amber-500" size={28} />
+              <p className="text-sm font-semibold text-amber-600">Belum ditandatangani</p>
+              <p className="text-xs text-slate-500">Slot tanda tangan ini belum disetujui di sistem.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 py-1 text-center">
+              <CheckCircle2 className="text-emerald-600" size={32} />
+              <p className="text-sm font-semibold text-emerald-700">Dokumen tercatat sah dalam sistem</p>
+              <div className="w-full space-y-1.5 rounded-lg bg-slate-50 p-3 text-left text-sm">
+                <p><span className="text-slate-400">Dokumen: </span><span className="font-medium">{docLabel}</span></p>
+                <p><span className="text-slate-400">Fasilitas: </span><span className="font-medium">{facility.label}</span></p>
+                <p><span className="text-slate-400">{periodLabelKey}: </span><span className="font-medium">{periodLabelVal}</span></p>
+                <p><span className="text-slate-400">{signer.label}: </span><span className="font-medium">{signer.nama}</span></p>
+                {signer.jabatan && <p><span className="text-slate-400">Jabatan: </span><span className="font-medium">{signer.jabatan}</span></p>}
+                <p><span className="text-slate-400">Tanggal disetujui: </span><span className="font-medium">{signer.tanggal ? fullDateID(signer.tanggal) : "-"}</span></p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <p className="mx-auto mt-4 max-w-xs text-center text-[11px] text-slate-400">
+          Halaman ini menampilkan data langsung dari sistem EM Viable secara real-time, bukan dari isi file PDF yang di-scan.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /* ========================================================================= APP ROOT */
 
 export default function App() {
+  if (typeof window !== "undefined" && window.location.pathname === "/verify") {
+    return <VerifyPage />;
+  }
   const { session, checking, login: doLogin, logout: doLogout } = useAuth();
   const [showLogin, setShowLogin] = useState(false);
   const [view, setView] = useState("dashboard");
