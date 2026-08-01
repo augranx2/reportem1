@@ -38,22 +38,37 @@ export default async function handler(req, res) {
 
   const { facilityLabel, monthLabel, classes, stats, prevSummary } = payload;
 
-  const prompt = `Anda adalah QA Apoteker berpengalaman di industri farmasi Indonesia yang menyusun bagian pembahasan untuk dokumen resmi "Pengkajian Trend Data Environment Monitoring (EM) Viable" (No. Formulir QA.FM.156), mengacu pada CPOB dan EU GMP Annex 1.
+  const prompt = `Anda adalah QA Apoteker berpengalaman di industri farmasi Indonesia yang menyusun bagian pembahasan untuk dokumen resmi "Pengkajian Trend Data Environment Monitoring (EM) Viable" (No. Formulir QA.FM.156), mengacu pada Standar CPOB tahun 2024 dan 2025 yang berlaku.
 Fasilitas: ${facilityLabel}
 Periode: ${monthLabel}
 Ringkasan kesimpulan bulan sebelumnya: ${prevSummary || "Tidak ada data bulan sebelumnya."}
-Data ringkasan per kelas ruangan (level tertinggi yang tercapai, dan daftar titik yang mencapai Alert/Action/Melebihi Syarat):
+Data ringkasan per kelas ruangan — untuk tiap parameter (settle/contact/air) berisi limit Alert/Action/Syarat, nilai tertinggi (lokasi + tanggal), dan apakah seluruh hasil <1 CFU; juga daftar titik yang mencapai Alert/Action/Melebihi Syarat:
 ${JSON.stringify(stats, null, 2)}
 
-Tulis narasi Bahasa Indonesia formal ala dokumen QA farmasi, mengacu pada data di atas dan mengaitkan dengan kondisi bulan sebelumnya bila relevan. Jangan mengarang angka yang tidak ada di data.
+Tulis narasi Bahasa Indonesia formal ala dokumen QA farmasi (gaya umum yang mudah dipahami, bukan bahasa akademis berat), mengacu HANYA pada data di atas — jangan mengarang angka, lokasi, atau tanggal yang tidak ada di data. Untuk tiap kelas, ikuti struktur berikut PERSIS (gunakan judul sub-bagian ini apa adanya, masing-masing diikuti baris baru lalu isinya, dan pisahkan tiap sub-bagian dengan baris kosong):
 
-Ketentuan khusus untuk "tindakLanjut": tulis tindakan yang realistis, proporsional terhadap tingkat penyimpangan (Alert vs Action vs Melebihi Syarat), dan mudah dieksekusi oleh tim di lapangan dengan sumber daya rutin yang tersedia (misalnya: pembersihan dan sanitasi ulang titik terdampak, evaluasi teknik sampling/personal hygiene petugas, peningkatan monitoring/reswab pada titik yang sama di periode berikutnya, review jadwal fogging/disinfeksi, pengecekan HVAC/filter/tekanan ruang, retraining singkat petugas gowning). Hindari usulan yang berat, mahal, atau butuh proses panjang (misalnya requalifikasi total, renovasi ruangan, penggantian sistem HVAC) kecuali data benar-benar menunjukkan penyimpangan berulang dan sistemik yang mengharuskannya. Jika kondisi terkendali (memenuhi syarat), cukup nyatakan pemantauan rutin dilanjutkan tanpa tindakan tambahan.
+<1-2 kalimat pembuka menjelaskan fungsi/peran kelas ruangan tersebut>
+
+Hasil dan Tren Settle Plate
+<sebutkan nilai tertinggi berikut lokasi & tanggal, bandingkan dengan Alert Limit dan Action Limit>
+
+Hasil dan Tren Contact Plate
+<sama seperti di atas untuk parameter contact plate>
+
+Hasil dan Tren Air Sampler
+<sama seperti di atas untuk parameter air sampler>
+
+Kesimpulan
+<1-2 kalimat kesimpulan kelas ini — gunakan kata "terkendali", JANGAN gunakan istilah "state of control" atau istilah Inggris lain yang tidak perlu>
+
+(Lewati sub-bagian untuk parameter yang tidak ada datanya di kelas tersebut, mis. Kelas A/E tidak selalu punya ketiga parameter.)
+
+Untuk "kesimpulanUmum": tulis ringkasan akhir seluruh kelas pada periode ini (bukan per-kelas lagi, tapi rekap singkat tiap kelas digabung jadi satu narasi mengalir, 5-8 kalimat/beberapa paragraf pendek), kaitkan dengan kondisi bulan sebelumnya bila relevan, gunakan kata "terkendali" (bukan "state of control"), dan DIAKHIRI dengan pernyataan tegas apakah fasilitas ini memenuhi persyaratan Standar CPOB tahun 2024 dan 2025 yang berlaku serta status kualifikasi lingkungan periode ini.
 
 Balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain) dengan struktur persis:
 {
-  "perKelas": { "<KODE_KELAS>": "narasi hasil, tren, dan kesimpulan untuk kelas ini (2-4 kalimat)", ... satu entri untuk tiap kelas berikut: ${(classes || []).join(", ")} },
-  "kesimpulanUmum": "4-6 kalimat kesimpulan umum seluruh kelas pada periode ini, DIAKHIRI dengan pernyataan tegas apakah fasilitas ini memenuhi syarat CPOB/EU GMP Annex 1 dan status kualifikasi lingkungan periode ini",
-  "tindakLanjut": "tindak lanjut praktis dan realistis di lapangan sesuai ketentuan di atas, atau 'Tidak diperlukan tindak lanjut khusus, pemantauan rutin dilanjutkan.' jika semua terkendali"
+  "perKelas": { "<KODE_KELAS>": "narasi lengkap kelas ini mengikuti struktur di atas", ... satu entri untuk tiap kelas berikut: ${(classes || []).join(", ")} },
+  "kesimpulanUmum": "ringkasan akhir seluruh kelas sesuai ketentuan di atas"
 }`;
 
   try {

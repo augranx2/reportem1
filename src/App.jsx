@@ -171,6 +171,30 @@ function buildStatsSummary(classes, entries) {
     const kelasEntries = entries.filter((e) => e.kelas === k);
     const breaches = [];
     let maxLevel = 0;
+    const perParam = {};
+
+    PARAM_DEFS.forEach((p) => {
+      const limit = getLimit(p.key, k);
+      if (!limit) return;
+      const points = kelasEntries
+        .map((e) => ({ room: e.roomName, tanggal: e.tanggal, raw: e[p.key] }))
+        .filter((pt) => pt.raw !== null && pt.raw !== undefined && pt.raw !== "");
+      if (points.length === 0) return;
+
+      const numeric = points
+        .map((pt) => ({ ...pt, value: parseNumericValue(pt.raw) }))
+        .filter((pt) => pt.value !== null);
+      const allBelowOne = limit.lessThan && numeric.every((pt) => pt.value < 1);
+      const maxVal = numeric.length > 0 ? Math.max(...numeric.map((pt) => pt.value)) : null;
+      const topPoints = maxVal === null ? [] : numeric.filter((pt) => pt.value === maxVal).slice(0, 3)
+        .map((pt) => ({ room: pt.room, tanggal: pt.tanggal, value: displayValue(pt.raw, k, p.key) }));
+
+      perParam[p.key] = {
+        label: p.short, alertLimit: limit.alert, actionLimit: limit.action, syaratLimit: limit.syarat,
+        allBelowOne, topValues: topPoints,
+      };
+    });
+
     kelasEntries.forEach((e) => {
       PARAM_DEFS.forEach((p) => {
         const limit = getLimit(p.key, k);
@@ -182,7 +206,7 @@ function buildStatsSummary(classes, entries) {
         }
       });
     });
-    summary[k] = { totalTitik: kelasEntries.length, maxLevel: LEVEL_LABEL[maxLevel], breaches };
+    summary[k] = { totalTitik: kelasEntries.length, maxLevel: LEVEL_LABEL[maxLevel], perParam, breaches };
   });
   return summary;
 }
@@ -212,12 +236,12 @@ function uid() {
 function emptyNarrative() {
   return {
     pendahuluan:
-      "Environment Monitoring (EM) Viable merupakan bagian kritis dari sistem pengendalian mutu lingkungan pada fasilitas produksi farmasi. Program EM Viable bertujuan untuk memantau dan mengevaluasi tingkat cemaran mikrobiologi di area produksi guna memastikan kondisi lingkungan tetap berada dalam kondisi terkendali (state of control) sesuai dengan ketentuan CPOB dan pedoman BPOM yang selaras dengan EU GMP Annex 1.",
+      "Environment Monitoring (EM) Viable merupakan bagian kritis dari sistem pengendalian mutu lingkungan pada fasilitas produksi farmasi. Program EM Viable bertujuan untuk memantau dan mengevaluasi tingkat cemaran mikrobiologi di area produksi guna memastikan kondisi lingkungan tetap berada dalam kondisi terkendali sesuai dengan ketentuan Standar CPOB tahun 2024 dan 2025 yang berlaku.",
     perKelas: {},
     kesimpulanUmum: "",
-    tindakLanjut: "",
     // Field lama (tidak lagi ditampilkan di UI), tetap disimpan kosong supaya
     // laporan lama yang sudah punya kolom ini di Google Sheet tidak error.
+    tindakLanjut: "",
     kesanUmum: "",
     observasiKritis: "",
     rekomendasiAkhir: "",
@@ -363,6 +387,14 @@ function AutoTextarea({ value, onChange, rows = 3, placeholder, className, readO
     el.style.height = "auto";
     el.style.height = el.scrollHeight + "px";
   }, [value]);
+  // Kelas seperti border/rounded/focus:* hanya relevan untuk tampilan kotak
+  // input yang bisa diklik di layar. Di versi cetak/PDF ini cuma teks biasa,
+  // jadi kelas-kelas itu sengaja dibuang supaya tidak ada kotak/warna sisa
+  // (mis. dari state :focus) yang muncul di ruang kosong bawah teks saat print.
+  const printClassName = (className || "")
+    .split(" ")
+    .filter((c) => c && !c.startsWith("focus:") && !c.startsWith("border") && !c.startsWith("ring") && c !== "rounded-lg")
+    .join(" ");
   return (
     <>
       <textarea
@@ -377,7 +409,7 @@ function AutoTextarea({ value, onChange, rows = 3, placeholder, className, readO
       />
       {/* Versi khusus cetak/PDF: teks biasa, mengikuti lebar halaman print
           sepenuhnya, tidak pernah terpotong seperti kotak <textarea>. */}
-      <div className={`only-print whitespace-pre-wrap text-justify ${className}`}>
+      <div className={`only-print whitespace-pre-wrap text-justify border-0 ${printClassName}`}>
         {value || <span className="text-slate-300">-</span>}
       </div>
     </>
@@ -434,7 +466,7 @@ function ClassSection({ kelas, entries, narrativeText, onNarrativeChange, readOn
         </label>
         <AutoTextarea
           className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
-          rows={4}
+          rows={14}
           value={narrativeText || ""}
           placeholder="Tulis ulasan hasil, tren, dan kesimpulan untuk kelas ini..."
           onChange={(ev) => onNarrativeChange(ev.target.value)}
@@ -1112,7 +1144,6 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
         ...prev,
         perKelas: { ...prev.perKelas, ...localRes.perKelas },
         kesimpulanUmum: localRes.kesimpulanUmum,
-        tindakLanjut: localRes.tindakLanjut,
       }));
       setGenerating(false);
       return;
@@ -1138,14 +1169,12 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
         ...prev,
         perKelas: { ...prev.perKelas, ...parsed.perKelas },
         kesimpulanUmum: parsed.kesimpulanUmum || localRes.kesimpulanUmum,
-        tindakLanjut: parsed.tindakLanjut || localRes.tindakLanjut,
       }));
     } catch (err) {
       setNarrative((prev) => ({
         ...prev,
         perKelas: { ...prev.perKelas, ...localRes.perKelas },
         kesimpulanUmum: localRes.kesimpulanUmum,
-        tindakLanjut: localRes.tindakLanjut,
       }));
       setAiError("AI gagal merespons, dipakai narasi otomatis dari data sebagai gantinya. Detail error: " + err.message);
     } finally {
@@ -1305,13 +1334,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
       <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
         <h3 className="mb-3 text-sm font-bold text-slate-700">Kesimpulan Umum</h3>
         <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
-          rows={5} value={narrative.kesimpulanUmum} onChange={(ev) => setNarrative({ ...narrative, kesimpulanUmum: ev.target.value })} readOnly={!canEditQA} />
-      </div>
-
-      <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
-        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Tindak Lanjut yang Diperlukan</label>
-        <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
-          rows={4} value={narrative.tindakLanjut} onChange={(ev) => setNarrative({ ...narrative, tindakLanjut: ev.target.value })} readOnly={!canEditQA} />
+          rows={8} value={narrative.kesimpulanUmum} onChange={(ev) => setNarrative({ ...narrative, kesimpulanUmum: ev.target.value })} readOnly={!canEditQA} />
       </div>
 
       <div className="mb-8 rounded-xl border border-slate-200 bg-white p-5 print-card">

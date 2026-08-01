@@ -1,6 +1,7 @@
-// Helper module untuk menghasilkan Pembahasan, Narasi per Kelas,
-// Kesimpulan Umum, Kesan Umum, Observasi Kritis, Tindak Lanjut,
-// dan Rekomendasi Akhir berbasis analisis data terinput (CPOB & EU GMP Annex 1).
+// Helper module untuk menghasilkan Pembahasan (per Kelas, per Parameter)
+// dan Kesimpulan Umum berbasis analisis data terinput, mengikuti gaya
+// bahasa & struktur pembahasan farmasi (Settle Plate / Contact Plate /
+// Air Sampler per kelas, lalu Kesimpulan per kelas, lalu Kesimpulan Umum).
 
 const PARAM_DEFS = [
   { key: "settle", label: "Cawan Papar (Settle Plate)", short: "Settle Plate" },
@@ -23,6 +24,16 @@ const LIMITS = [
   { parameter: "contact", kelas: "A", syarat: 1, alert: 1, action: 1, lessThan: true },
   { parameter: "air", kelas: "A", syarat: 1, alert: 1, action: 1, lessThan: true },
 ];
+
+const KELAS_INTRO = {
+  E: "Kelas E merupakan area pendukung umum pada fasilitas produksi dengan tingkat pengendalian lingkungan paling dasar.",
+  D: "Kelas D merupakan area pendukung yang digunakan untuk kegiatan pencucian alat, washing, persiapan, loading, dan aktivitas penunjang lainnya. Area ini memiliki aktivitas personel dan perpindahan material yang relatif tinggi sehingga memungkinkan terjadinya variasi hasil monitoring mikrobiologi.",
+  C: "Kelas C merupakan area dengan tingkat pengendalian lebih tinggi yang berfungsi sebagai area transisi menuju area aseptik.",
+  B: "Kelas B merupakan area latar belakang untuk proses aseptik sehingga memerlukan tingkat pengendalian lingkungan yang lebih ketat.",
+  A: "Kelas A merupakan area paling kritis yang digunakan untuk proses aseptik sehingga memerlukan kondisi lingkungan dengan tingkat kebersihan tertinggi.",
+};
+
+const MONTHS_ID = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
 function getLimit(parameter, kelas) {
   return LIMITS.find((l) => l.parameter === parameter && l.kelas === kelas) || null;
@@ -68,16 +79,78 @@ function displayValue(rawValue, kelas, parameter) {
   return String(rawValue);
 }
 
-function shortDate(iso) {
+function fullDateID(iso) {
   if (!iso) return "";
-  const parts = iso.split("-");
-  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-  return iso;
+  const [y, m, d] = String(iso).split("-");
+  if (!y || !m || !d) return iso;
+  return `${d} ${MONTHS_ID[Number(m) - 1] || m} ${y}`;
+}
+
+// Narasi 1 sub-bagian parameter (Settle Plate / Contact Plate / Air Sampler)
+// untuk 1 kelas — mengikuti gaya: sebutkan nilai tertinggi (lokasi + tanggal),
+// bandingkan dengan Alert/Action Limit, dan jelaskan apakah kejadian breach
+// (bila ada) berulang atau hanya sekali.
+function paramNarrative(paramKey, paramShort, kelas, kelasEntries) {
+  const limit = getLimit(paramKey, kelas);
+  if (!limit) return null;
+
+  const points = kelasEntries
+    .map((e) => ({ room: e.roomName || "Ruangan", tanggal: e.tanggal, raw: e[paramKey], value: parseNumericValue(e[paramKey]) }))
+    .filter((p) => p.value !== null);
+
+  if (points.length === 0) {
+    return `Belum terdapat data ${paramShort} yang tercatat untuk parameter ini pada periode berjalan.`;
+  }
+
+  const allBelowOne = limit.lessThan && points.every((p) => p.value < 1);
+  if (allBelowOne) {
+    return `Seluruh hasil ${paramShort} menunjukkan <1 CFU secara konsisten pada seluruh titik dan tanggal pengujian.`;
+  }
+
+  const maxVal = Math.max(...points.map((p) => p.value));
+  const topPoints = points.filter((p) => p.value === maxVal).slice(0, 3);
+  const topStr = topPoints
+    .map((p) => `${p.room} : ${displayValue(p.raw, kelas, paramKey)} CFU (${fullDateID(p.tanggal)})`)
+    .join("; ");
+
+  const breachPoints = points.filter((p) => getStatus(p.raw, paramKey, kelas).level >= 2);
+
+  let text = `Hasil monitoring ${paramShort.toLowerCase()} menunjukkan nilai tertinggi pada ${topStr}. `;
+
+  if (breachPoints.length === 0) {
+    text += `Seluruh hasil masih berada di bawah Alert Limit (${limit.alert} CFU) dan Action Limit (${limit.action} CFU), sehingga kondisi lingkungan untuk parameter ini masih memenuhi persyaratan yang ditetapkan.`;
+  } else {
+    const highestLevel = Math.max(...breachPoints.map((p) => getStatus(p.raw, paramKey, kelas).level));
+    const uniqueDates = new Set(breachPoints.map((p) => p.tanggal));
+    const recurring = uniqueDates.size > 1;
+    const levelPhrase = highestLevel >= 4
+      ? "telah melampaui batas Syarat (spesifikasi) yang ditetapkan"
+      : highestLevel >= 3
+        ? "telah mencapai/melampaui Action Limit"
+        : "telah mencapai Alert Limit";
+    text += `Nilai tersebut ${levelPhrase} (Alert Limit ${limit.alert} CFU, Action Limit ${limit.action} CFU). `;
+    text += recurring
+      ? "Kejadian ini terjadi pada lebih dari satu tanggal pengujian sehingga memerlukan perhatian dan tindak lanjut lebih serius."
+      : "Namun kejadian tersebut hanya terjadi pada satu kali pengujian, tidak berulang pada pengujian berikutnya.";
+  }
+  return text;
+}
+
+function classConclusion(kelas, breachesInClass) {
+  if (breachesInClass.length === 0) {
+    return `Lingkungan Kelas ${kelas} berada dalam kondisi terkendali. Seluruh parameter monitoring memenuhi persyaratan yang ditetapkan tanpa adanya hasil yang mencapai Alert maupun Action Limit.`;
+  }
+  const highestLevel = Math.max(...breachesInClass.map((b) => b.level));
+  if (highestLevel >= 4) {
+    return `Lingkungan Kelas ${kelas} terdapat titik yang melebihi batas persyaratan (spesifikasi) yang ditetapkan. Diperlukan investigasi lebih lanjut dan pengujian ulang (re-sampling) untuk memastikan kondisi lingkungan kembali terkendali.`;
+  }
+  return `Lingkungan Kelas ${kelas} masih berada dalam kondisi terkendali. Terdapat beberapa hasil yang mencapai Alert maupun Action Limit, namun kejadian tersebut tidak menunjukkan pola peningkatan yang konsisten dan tidak memengaruhi kondisi kelas ruangan lainnya.`;
 }
 
 export function generateLocalNarrative({ facilityLabel, monthLabel, classes, entries }) {
   const perKelas = {};
   const allBreaches = [];
+  const classSummaries = [];
   let totalPointsAll = 0;
 
   classes.forEach((k) => {
@@ -89,14 +162,6 @@ export function generateLocalNarrative({ facilityLabel, monthLabel, classes, ent
       return;
     }
 
-    const roomNames = Array.from(new Set(kelasEntries.map((e) => e.roomName).filter(Boolean)));
-    const roomStr = roomNames.length > 0 ? roomNames.join(", ") : "ruangan sampling";
-
-    const paramsUsed = [];
-    PARAM_DEFS.forEach((p) => {
-      if (getLimit(p.key, k)) paramsUsed.push(p.short);
-    });
-
     const breachesInClass = [];
     kelasEntries.forEach((e) => {
       PARAM_DEFS.forEach((p) => {
@@ -106,57 +171,48 @@ export function generateLocalNarrative({ facilityLabel, monthLabel, classes, ent
         if (val === null || val === undefined || val === "" || val === "-") return;
         const st = getStatus(val, p.key, k);
         if (st.level >= 2) {
-          const breachObj = {
-            kelas: k,
-            roomName: e.roomName || "Ruangan",
-            tanggal: shortDate(e.tanggal),
-            parameter: p.short,
-            value: displayValue(val, k, p.key),
-            level: st.level,
-            label: st.label,
-          };
+          const breachObj = { kelas: k, roomName: e.roomName || "Ruangan", tanggal: e.tanggal, parameter: p.short, value: displayValue(val, k, p.key), level: st.level, label: st.label };
           breachesInClass.push(breachObj);
           allBreaches.push(breachObj);
         }
       });
     });
 
-    let classNarrative = `Pada periode ${monthLabel}, pengkajian data EM Viable Kelas ${k} pada fasilitas ${facilityLabel} mencakup ${kelasEntries.length} titik sampling di lokasi: ${roomStr} dengan parameter pengujian ${paramsUsed.join(", ")}. `;
+    const sections = [KELAS_INTRO[k] || `Kelas ${k} merupakan salah satu area pemantauan lingkungan pada fasilitas ini.`];
 
-    if (breachesInClass.length === 0) {
-      classNarrative += `Hasil pemantauan menunjukkan seluruh titik sampling berada dalam kondisi terkendali (state of control) di bawah batas Alert Limit. Rata-rata cemaran mikrobiologi terpantau stabil dan memenuhi persyaratan CPOB/EU GMP Annex 1 untuk Kelas ${k}.`;
-    } else {
-      const breachDetails = breachesInClass
-        .map((b) => `${b.roomName} (${b.parameter}: ${b.value} CFU, status ${b.label} pada ${b.tanggal})`)
-        .join("; ");
-      classNarrative += `Berdasarkan analisis data, terdeteksi ${breachesInClass.length} titik yang mengalami penyimpangan yaitu: ${breachDetails}. Titik lainnya berada dalam batas terkendali. Diperlukan tindakan evaluasi dan sanitasi terarah pada area tersebut.`;
-    }
+    PARAM_DEFS.forEach((p) => {
+      const text = paramNarrative(p.key, p.short, k, kelasEntries);
+      if (text) sections.push(`Hasil dan Tren ${p.short}\n${text}`);
+    });
 
-    perKelas[k] = classNarrative;
+    sections.push(`Kesimpulan\n${classConclusion(k, breachesInClass)}`);
+    perKelas[k] = sections.join("\n\n");
+
+    classSummaries.push({ kelas: k, breaches: breachesInClass });
   });
 
-  // Kesimpulan Umum (sudah mencakup pernyataan pemenuhan syarat CPOB/EU GMP Annex 1)
+  // Kesimpulan Umum — rekap singkat tiap kelas, ditutup pernyataan efektivitas
+  // program EM Viable periode ini (tanpa istilah "state of control").
   let kesimpulanUmum = "";
   if (totalPointsAll === 0) {
     kesimpulanUmum = `Berdasarkan data yang diinput untuk fasilitas ${facilityLabel} pada periode ${monthLabel}, belum ada titik sampling yang dicatat. Diharapkan untuk melengkapi data pemantauan lingkungan sebelum melakukan evaluasi akhir.`;
-  } else if (allBreaches.length === 0) {
-    kesimpulanUmum = `Berdasarkan hasil pengkajian data Environment Monitoring (EM) Viable fasilitas ${facilityLabel} periode ${monthLabel}, seluruh titik sampling pada Kelas ${classes.join(", ")} sebanyak ${totalPointsAll} pengujian secara keseluruhan berada dalam batas terkendali (state of control) di bawah Alert Limit. Kondisi lingkungan produksi memenuhi kriteria keberterimaan sesuai ketentuan CPOB dan pedoman BPOM / EU GMP Annex 1. Fasilitas ${facilityLabel} dinyatakan memenuhi syarat kualitas lingkungan mikrobiologi dan direkomendasikan dapat terus digunakan untuk aktivitas operasional/produksi secara penuh pada periode berjalan.`;
   } else {
-    const breachClasses = Array.from(new Set(allBreaches.map((b) => `Kelas ${b.kelas}`))).join(", ");
-    kesimpulanUmum = `Berdasarkan hasil pengkajian data Environment Monitoring (EM) Viable fasilitas ${facilityLabel} periode ${monthLabel} dari total ${totalPointsAll} pengujian, mayoritas titik pemantauan berada dalam kondisi terkendali. Namun demikian, terdeteksi ${allBreaches.length} kejadian penyimpangan batas (Alert/Action/Melebihi Syarat) yang terdistribusi pada ${breachClasses}. Tindakan penanganan dan investigasi diperlukan untuk memastikan kualitas lingkungan tetap terjaga. Fasilitas ${facilityLabel} dapat digunakan dengan catatan dilakukan penanganan CAPA dan re-sampling ketat pada titik penyimpangan hingga diperoleh hasil yang terkendali secara konsisten sesuai ketentuan CPOB dan EU GMP Annex 1.`;
+    const intro = `Berdasarkan evaluasi trend data Environment Monitoring (EM) Viable periode ${monthLabel} pada fasilitas ${facilityLabel}, dapat disimpulkan bahwa kondisi lingkungan produksi pada seluruh kelas ruangan (${classes.map((k) => `Kelas ${k}`).join(", ")}) ${allBreaches.length === 0 ? "berada dalam keadaan terkendali dan memenuhi persyaratan CPOB yang berlaku." : "secara umum masih berada dalam keadaan terkendali, dengan beberapa titik pada kelas tertentu yang memerlukan perhatian lebih lanjut."}`;
+
+    const perClassRecap = classSummaries.map(({ kelas: k, breaches }) => {
+      if (breaches.length === 0) {
+        return `Pada Kelas ${k}, seluruh parameter monitoring memenuhi persyaratan tanpa adanya hasil yang mencapai Alert maupun Action Limit.`;
+      }
+      const rooms = Array.from(new Set(breaches.map((b) => b.roomName))).slice(0, 3).join(", ");
+      return `Pada Kelas ${k}, terdapat hasil pada area ${rooms} yang mencapai Alert/Action Limit, namun kejadian tersebut tidak menunjukkan tren peningkatan yang berkelanjutan.`;
+    });
+
+    const closing = allBreaches.length === 0
+      ? `Secara keseluruhan, variasi hasil yang diperoleh masih mencerminkan kondisi operasional normal dan tidak menunjukkan adanya kecenderungan peningkatan cemaran mikrobiologi yang signifikan. Dengan demikian, program Environment Monitoring (EM) Viable periode ${monthLabel} masih efektif dalam memantau dan mengendalikan kondisi lingkungan produksi sehingga tetap mendukung proses pembuatan produk sesuai persyaratan mutu dan Standar CPOB tahun 2024 dan 2025 yang berlaku.`
+      : `Secara keseluruhan, diperlukan tindak lanjut berupa investigasi dan pemantauan yang lebih ketat pada titik-titik yang mengalami penyimpangan. Fasilitas ${facilityLabel} tetap dapat digunakan dengan catatan dilakukan penanganan dan re-sampling pada titik terkait hingga diperoleh hasil yang terkendali secara konsisten sesuai Standar CPOB tahun 2024 dan 2025 yang berlaku.`;
+
+    kesimpulanUmum = [intro, ...perClassRecap, closing].join("\n\n");
   }
 
-  // Tindak Lanjut
-  let tindakLanjut = "";
-  if (allBreaches.length === 0) {
-    tindakLanjut = "1. Melanjutkan pemantauan rutin Environment Monitoring Viable sesuai jadwal dan SOP yang berlaku.\n2. Mempertahankan penerapan Good Manufacturing Practice (GMP), prosedur sanitasi ruangan, dan higiene personel secara konsisten.";
-  } else {
-    tindakLanjut = "1. Melakukan investigasi lapangan dan penelusuran akar masalah (Root Cause Analysis / RCA) terhadap titik yang mengalami penyimpangan.\n2. Melakukan tindakan pembersihan dan desinfeksi ulang (intensified cleaning & sanitization) pada ruangan terdampak.\n3. Melakukan pengujian ulang (re-sampling) pada titik terkait untuk memastikan kondisi lingkungan kembali terkendali.\n4. Mengevaluasi performa dan pola aliran udara sistem HVAC serta filter HEPA di area terkait.";
-  }
-
-  return {
-    perKelas,
-    kesimpulanUmum,
-    tindakLanjut,
-  };
+  return { perKelas, kesimpulanUmum };
 }
