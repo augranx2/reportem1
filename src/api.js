@@ -78,6 +78,10 @@ export function logout(token) {
   return apiPost({ action: "logout", token }).catch(() => {});
 }
 
+export function changePassword(oldPassword, newPassword, token) {
+  return apiPost({ action: "changePassword", oldPassword, newPassword, token });
+}
+
 export function whoami(token) {
   return apiGet({ action: "whoami", token });
 }

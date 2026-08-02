@@ -126,6 +126,11 @@ function doPost(e) {
       case "logout":
         result = logout_(body.token);
         break;
+      case "changePassword":
+        result = withAuth_(body.token, function (session) {
+          return changePasswordAuthed_(session, body.oldPassword, body.newPassword);
+        });
+        break;
       case "saveEntries":
         result = withAuth_(body.token, function (session) {
           return saveEntriesAuthed_(session, body.facility, body.month, body.entries || []);
@@ -288,6 +293,48 @@ function login_(username, password) {
   });
 
   return { ok: true, token: token, nama: user.nama, role: user.role, departemen: user.departemen, username: user.username };
+}
+
+// Ganti password milik akun yang sedang login sendiri (bukan reset akun lain).
+// Wajib masukkan password lama yang benar dulu sebelum bisa set password baru.
+// "Lupa password" sengaja tidak disediakan di sini — itu ditangani manual oleh
+// Administrator langsung lewat kolom PasswordBaru di sheet User_Roles.
+function changePasswordAuthed_(session, oldPassword, newPassword) {
+  if (!oldPassword || !newPassword) {
+    return { error: "Password lama dan password baru wajib diisi." };
+  }
+  if (String(newPassword).length < 6) {
+    return { error: "Password baru minimal 6 karakter." };
+  }
+  const sheet = getUserRolesSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { error: "Data pengguna tidak ditemukan." };
+  const range = sheet.getRange(2, 1, lastRow - 1, 7);
+  const values = range.getValues();
+  const target = String(session.username || "").trim().toLowerCase();
+
+  for (let i = 0; i < values.length; i++) {
+    const uname = String(values[i][3] || "").trim().toLowerCase();
+    if (uname && uname === target) {
+      const currentHash = values[i][5];
+      const currentSalt = values[i][6];
+      if (!currentHash || hashPassword_(oldPassword, currentSalt) !== currentHash) {
+        return { error: "Password lama yang Anda masukkan salah." };
+      }
+      const newSalt = generateSalt_();
+      const newHash = hashPassword_(String(newPassword), newSalt);
+      sheet.getRange(i + 2, 5).setValue(""); // kosongkan PasswordBaru kalau ada
+      sheet.getRange(i + 2, 6).setValue(newHash);
+      sheet.getRange(i + 2, 7).setValue(newSalt);
+
+      writeAuditLog_({
+        username: session.username, nama: session.nama, role: session.role, departemen: session.departemen,
+        aksi: "Ganti Password", fasilitas: "", bulan: "", detail: "",
+      });
+      return { ok: true };
+    }
+  }
+  return { error: "Akun tidak ditemukan." };
 }
 
 function logout_(token) {
