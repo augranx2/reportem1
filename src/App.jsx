@@ -14,7 +14,6 @@ import {
   generateNarrative, approveDikaji as apiApproveDikaji,
   approveMengetahui as apiApproveMengetahui, fetchActivityLog,
   fetchReportEM, saveReportEM as apiSaveReportEM, approveReportEM as apiApproveReportEM,
-  changePassword as apiChangePassword,
 } from "./api.js";
 import { generateLocalNarrative } from "./narrativeGenerator.js";
 import { useAuth, hasAccess } from "./auth.js";
@@ -943,52 +942,68 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
             )}
           </div>
 
-          <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <div>
-              <p className="mb-1 text-xs font-semibold uppercase text-slate-400">Diperiksa oleh</p>
-              <div className="mb-2 flex h-24 items-center justify-center rounded border border-dashed border-slate-300 print:h-28">
+          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Diperiksa oleh</p>
+              <div className="mb-3 flex h-24 items-center justify-center rounded border border-dashed border-slate-300 print:h-28">
                 {analis.nama ? (
                   <VerifyQR type="report" facility={facilityKey} period={tanggal} slot="analis" size={64} />
                 ) : (
                   <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
                 )}
               </div>
-              <p className="text-sm font-medium">{analis.nama || "-"}</p>
-              <p className="text-xs text-slate-400">{analis.tanggal ? fullDateID(analis.tanggal) : ""}</p>
+              {analis.nama ? (
+                <div className="space-y-1 text-sm">
+                  <p className="font-semibold text-slate-700">{analis.nama}</p>
+                  <p className="text-xs text-slate-400">{analis.tanggal ? fullDateID(analis.tanggal) : ""}</p>
+                </div>
+              ) : canInput ? (
+                <button onClick={handleSave} disabled={saving}
+                  className="no-print inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Setujui &amp; Tanda Tangani
+                </button>
+              ) : (
+                <p className="no-print inline-flex items-center gap-1.5 text-xs text-slate-400"><Lock size={12} /> Hanya Staff/Supervisor/Manager QC yang bisa menandatangani</p>
+              )}
             </div>
-            <div>
-              <p className="mb-1 text-xs font-semibold uppercase text-slate-400">Mengetahui</p>
-              <div className="mb-2 flex h-24 items-center justify-center rounded border border-dashed border-slate-300 print:h-28">
+
+            <div className="rounded-lg border border-slate-200 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Mengetahui</p>
+              <div className="mb-3 flex h-24 items-center justify-center rounded border border-dashed border-slate-300 print:h-28">
                 {diperiksa.nama ? (
                   <VerifyQR type="report" facility={facilityKey} period={tanggal} slot="diperiksa" size={64} />
                 ) : (
                   <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
                 )}
               </div>
-              <p className="text-sm font-medium">{diperiksa.nama || "-"}</p>
-              <p className="text-xs text-slate-400">{diperiksa.tanggal ? fullDateID(diperiksa.tanggal) : ""}</p>
+              {diperiksa.nama ? (
+                <div className="space-y-1 text-sm">
+                  <p className="font-semibold text-slate-700">{diperiksa.nama}</p>
+                  <p className="text-xs text-slate-400">{diperiksa.tanggal ? fullDateID(diperiksa.tanggal) : ""}</p>
+                </div>
+              ) : canApprove && analis.nama ? (
+                <button onClick={handleApprove} disabled={approving}
+                  className="no-print inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
+                  {approving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Setujui &amp; Tanda Tangani
+                </button>
+              ) : (
+                <p className="no-print inline-flex items-center gap-1.5 text-xs text-slate-400">
+                  <Lock size={12} /> {!analis.nama ? 'Menunggu "Diperiksa oleh" terlebih dahulu' : "Hanya Supervisor/Manager QC yang bisa menyetujui"}
+                </p>
+              )}
             </div>
           </div>
 
           <p className="mt-6 text-xs text-slate-400">Lampiran No. 2, Protap No. POS.QC.036</p>
 
-          <div className="no-print mt-5 flex justify-end gap-2">
-            {canInput && !isApproved && (
-              <button onClick={handleSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
-                {saving ? <Loader2 size={15} className="animate-spin" /> : null} Simpan
+          {canInput && analis.nama && !isApproved && (
+            <div className="no-print mt-5 flex justify-end">
+              <button onClick={handleSave} disabled={saving}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
+                {saving ? <Loader2 size={15} className="animate-spin" /> : null} Simpan Perubahan (No. Kontrol Media / Tgl Pembacaan)
               </button>
-            )}
-            {canApprove && !isApproved && analis.nama && (
-              <button onClick={handleApprove} disabled={approving} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60">
-                {approving ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />} Setujui (Mengetahui)
-              </button>
-            )}
-            {isApproved && (
-              <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">
-                <CheckCircle2 size={15} /> Sudah disetujui
-              </span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1443,83 +1458,7 @@ function LoginModal({ onClose, onLogin }) {
   );
 }
 
-function ChangePasswordModal({ token, onClose }) {
-  const [oldPassword, setOldPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-
-  const submit = async (ev) => {
-    ev.preventDefault();
-    setError("");
-    if (newPassword.length < 6) {
-      setError("Password baru minimal 6 karakter.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError("Konfirmasi password baru tidak sama.");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await apiChangePassword(oldPassword, newPassword, token);
-      if (res.error) throw new Error(res.error);
-      setSuccess(true);
-    } catch (err) {
-      setError(err.message || "Gagal mengganti password.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
-        <div className="mb-4 flex items-center gap-2">
-          <Lock size={18} className="text-blue-700" />
-          <h3 className="text-base font-bold text-slate-800">Ganti Password</h3>
-        </div>
-        {success ? (
-          <div>
-            <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">Password berhasil diganti.</p>
-            <div className="flex justify-end">
-              <button onClick={onClose} className="rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800">
-                Tutup
-              </button>
-            </div>
-          </div>
-        ) : (
-          <form onSubmit={submit}>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Password Lama</label>
-            <input autoFocus type="password" value={oldPassword} onChange={(ev) => setOldPassword(ev.target.value)}
-              className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Password Baru</label>
-            <input type="password" value={newPassword} onChange={(ev) => setNewPassword(ev.target.value)}
-              className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Ulangi Password Baru</label>
-            <input type="password" value={confirmPassword} onChange={(ev) => setConfirmPassword(ev.target.value)}
-              className="mb-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
-            <p className="mb-4 text-xs text-slate-400">Minimal 6 karakter. Lupa password lama? Hubungi Administrator, bukan lewat form ini.</p>
-            {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
-                Batal
-              </button>
-              <button type="submit" disabled={submitting || !oldPassword || !newPassword || !confirmPassword}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
-                {submitting ? <Loader2 size={14} className="animate-spin" /> : null} Simpan Password Baru
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function TopBar({ session, onLoginClick, onLogout, onChangePasswordClick, view, setView }) {
+function TopBar({ session, onLoginClick, onLogout, view, setView }) {
   return (
     <div className="no-print border-b border-slate-200 bg-white px-4 py-2.5">
       <div className="mx-auto flex max-w-5xl items-center justify-between">
@@ -1539,9 +1478,6 @@ function TopBar({ session, onLoginClick, onLogout, onChangePasswordClick, view, 
               <span className="hidden items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 sm:inline-flex">
                 <User size={13} /> {session.nama} · {session.role} {session.departemen}
               </span>
-              <button onClick={onChangePasswordClick} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                <Lock size={14} /> Ganti Password
-              </button>
               <button onClick={onLogout} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
                 <LogOut size={14} /> Keluar
               </button>
@@ -1725,7 +1661,6 @@ export default function App() {
   }
   const { session, checking, login: doLogin, logout: doLogout } = useAuth();
   const [showLogin, setShowLogin] = useState(false);
-  const [showChangePassword, setShowChangePassword] = useState(false);
   const [view, setView] = useState("dashboard");
   const [facilityKey, setFacilityKey] = useState(null);
   const [monthKey, setMonthKey] = useState(() => {
@@ -1788,9 +1723,8 @@ export default function App() {
           }
         }
       `}</style>
-      <TopBar session={session} onLoginClick={() => setShowLogin(true)} onLogout={doLogout} onChangePasswordClick={() => setShowChangePassword(true)} view={view} setView={setView} />
+      <TopBar session={session} onLoginClick={() => setShowLogin(true)} onLogout={doLogout} view={view} setView={setView} />
       {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={doLogin} />}
-      {showChangePassword && <ChangePasswordModal token={session?.token} onClose={() => setShowChangePassword(false)} />}
       {view === "dashboard" ? (
         <Dashboard
           monthKey={monthKey}
