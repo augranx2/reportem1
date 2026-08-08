@@ -727,7 +727,7 @@ function keteranganMS(entry) {
   return maxLevel >= 4 ? "TMS" : "MS";
 }
 
-function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token, onBack }) {
+function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token, locked = false, onBack }) {
   const facility = FACILITIES.find((f) => f.key === facilityKey);
   // Tgl Berlaku FM.QC.062/R3 — sengaja dikosongkan dulu sampai revisi ini
   // disahkan resmi secara fisik di kantor. Isi tanggalnya di sini nanti
@@ -742,8 +742,8 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
   const [approving, setApproving] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const canInput = hasAccess(session, "Staff", "QC");
-  const canApprove = hasAccess(session, "Supervisor", "QC");
+  const canInput = hasAccess(session, "Staff", "QC") && !locked;
+  const canApprove = hasAccess(session, "Supervisor", "QC") && !locked;
 
   // Tanggal-tanggal yang ada datanya di bulan yang sedang dibuka, supaya
   // gampang dipilih (tidak perlu ingat tanggal persis)
@@ -861,6 +861,12 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
       </div>
 
       {errorMsg && <p className="no-print mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{errorMsg}</p>}
+
+      {locked && (
+        <p className="no-print mb-4 inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-500">
+          <Lock size={12} /> Pengkajian EM bulan ini sudah di-approve final — Formulir QC terkunci, hubungi Administrator kalau perlu perubahan.
+        </p>
+      )}
 
       {!tanggal ? (
         <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
@@ -1028,8 +1034,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
   const canDeleteQC = hasAccess(session, "Supervisor", "QC") || hasAccess(session, "Supervisor", "QA");
   const canEditQA = hasAccess(session, "Supervisor", "QA");
   const canApproveFinal = hasAccess(session, "Manager", "QA");
-  const isAdmin = session?.role === "Administrator";
-  // Administrator melihat & bisa akses SEMUA tombol, lintas departemen
+  const isAdmin = session?.role === "Administrator";  // Administrator melihat & bisa akses SEMUA tombol, lintas departemen
   const isQA = isAdmin || session?.departemen === "QA";
   const isQC = isAdmin || session?.departemen === "QC";
   // Grafik & pembahasan/pengkajian QA hanya untuk yang sudah login (Tamu ke
@@ -1095,6 +1100,10 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
   }, [classes, entries]);
   const persyaratanRows = useMemo(() => LIMITS.filter((l) => classes.includes(l.kelas)), [classes]);
   const overallLevel = facilityOverallLevel(entries);
+  // Begitu Pengkajian EM bulan ini sudah di-approve final ("Mengetahui" oleh
+  // Manager QA), data mentah, Formulir QC, dan narasi terkunci untuk semua
+  // orang kecuali Administrator.
+  const isLocked = !isAdmin && !!signoff?.diperiksa?.nama;
 
   const reloadReport = useCallback(async () => {
     try {
@@ -1237,6 +1246,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
         monthKey={monthKey}
         session={session}
         token={token}
+        locked={isLocked}
         onBack={() => setMode("pengkajian")}
       />
     );
@@ -1297,8 +1307,12 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
 
       <div className="no-print mb-5">
         <EntryEditor masterRooms={masterRooms} entries={entries} setEntries={setEntries} onSave={saveEntriesOnly} saving={saving}
-          canInput={canInputQC} canDeleteExisting={canDeleteQC}
-          accessNote={session ? "Staff/Supervisor/Manager QC atau Supervisor/Manager QA yang bisa mengisi data" : "Login untuk mengisi data"} />
+          canInput={canInputQC && !isLocked} canDeleteExisting={canDeleteQC && !isLocked}
+          accessNote={
+            isLocked
+              ? "Pengkajian EM bulan ini sudah di-approve final — data terkunci, hubungi Administrator"
+              : session ? "Staff/Supervisor/Manager QC atau Supervisor/Manager QA yang bisa mengisi data" : "Login untuk mengisi data"
+          } />
       </div>
 
       <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
@@ -1332,12 +1346,12 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
           <h3 className="text-sm font-bold text-slate-700">Pembahasan &amp; Narasi</h3>
           {canEditQA ? (
             <div className="flex gap-2">
-              <button onClick={() => handleGenerateNarrative(false)} disabled={generating || entries.length === 0}
+              <button onClick={() => handleGenerateNarrative(false)} disabled={generating || entries.length === 0 || isLocked}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                 {generating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                 Buat Narasi dari Data
               </button>
-              <button onClick={() => handleGenerateNarrative(true)} disabled={generating || entries.length === 0}
+              <button onClick={() => handleGenerateNarrative(true)} disabled={generating || entries.length === 0 || isLocked}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">
                 {generating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                 {generating ? "Menyusun narasi..." : "Buat Narasi dengan AI"}
@@ -1350,13 +1364,18 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
           )}
         </div>
       )}
+      {canViewDiscussion && isLocked && (
+        <p className="no-print mb-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-500">
+          <Lock size={12} /> Pengkajian EM bulan ini sudah di-approve final — narasi terkunci, hubungi Administrator kalau perlu perubahan.
+        </p>
+      )}
       {canViewDiscussion && aiError && <p className="no-print mb-3 text-sm text-red-600">{aiError}</p>}
 
       {canViewDiscussion && (
         <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
           <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Pendahuluan</label>
           <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
-            rows={3} value={narrative.pendahuluan} onChange={(ev) => setNarrative({ ...narrative, pendahuluan: ev.target.value })} readOnly={!canEditQA} />
+            rows={3} value={narrative.pendahuluan} onChange={(ev) => setNarrative({ ...narrative, pendahuluan: ev.target.value })} readOnly={!canEditQA || isLocked} />
         </div>
       )}
 
@@ -1367,7 +1386,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
         {classes.map((k) => (
           <ClassSection key={k} kelas={k} entries={grouped[k]} narrativeText={narrative.perKelas[k]}
             onNarrativeChange={(val) => setNarrative({ ...narrative, perKelas: { ...narrative.perKelas, [k]: val } })}
-            readOnly={!canEditQA} showDiscussion={canViewDiscussion} />
+            readOnly={!canEditQA || isLocked} showDiscussion={canViewDiscussion} />
         ))}
       </div>
 
@@ -1383,7 +1402,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
           <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
             <h3 className="mb-3 text-sm font-bold text-slate-700">Kesimpulan Umum</h3>
             <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
-              rows={8} value={narrative.kesimpulanUmum} onChange={(ev) => setNarrative({ ...narrative, kesimpulanUmum: ev.target.value })} readOnly={!canEditQA} />
+              rows={8} value={narrative.kesimpulanUmum} onChange={(ev) => setNarrative({ ...narrative, kesimpulanUmum: ev.target.value })} readOnly={!canEditQA || isLocked} />
           </div>
 
           <div className="mb-8 rounded-xl border border-slate-200 bg-white p-5 print-card">
@@ -1423,7 +1442,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
             </div>
           </div>
 
-          {canEditQA && (
+          {canEditQA && !isLocked && (
             <div className="no-print mb-8 flex justify-end">
               <button onClick={saveNarrativeOnly} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
                 {saving ? <Loader2 size={15} className="animate-spin" /> : null} Simpan Narasi &amp; Pembahasan

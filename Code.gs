@@ -48,11 +48,12 @@
  *    Supervisor QC sudah approve Formulir QC (dianggap data selesai), QA
  *    tidak bisa lagi mengedit/menghapus data mentah bulan itu (QC tetap
  *    bisa).
- * 5. Begitu Pengkajian EM suatu bulan sudah DIBUAT (baris tersimpan di
- *    Laporan_Narasi), data mentah maupun Formulir QC bulan itu terkunci
- *    total dari edit/hapus untuk SIAPA PUN kecuali Administrator. Narasi
- *    Pengkajian EM sendiri tetap bisa disunting Supervisor/Manager QA
- *    sampai di-approve final ("Mengetahui").
+ * 5. Data mentah maupun Formulir QC suatu bulan terkunci total dari edit/
+ *    hapus untuk SIAPA PUN kecuali Administrator begitu Pengkajian EM
+ *    bulan itu sudah di-APPROVE FINAL ("Mengetahui" oleh Manager QA) —
+ *    bukan cuma begitu drafnya dibuat. Narasi Pengkajian EM sendiri juga
+ *    ikut terkunci (tidak bisa disunting lagi) begitu sudah final,
+ *    kecuali oleh Administrator.
  */
 
 // ---------------------------------------------------------------------------
@@ -442,10 +443,11 @@ function saveEntriesAuthed_(session, facilityKey, month, entries) {
   if (!cfg) return { error: "Fasilitas tidak dikenal: " + facilityKey };
 
   if (session.role !== "Administrator") {
-    // Kunci total: kalau Pengkajian EM bulan ini sudah dibuat, data mentah
-    // tidak bisa diubah/dihapus siapa pun kecuali Administrator.
-    if (getReport_(facilityKey, month).found) {
-      return { error: "Pengkajian EM bulan ini sudah dibuat — data mentah terkunci. Hubungi Administrator kalau perlu perubahan." };
+    // Kunci total: kalau Pengkajian EM bulan ini sudah di-approve FINAL
+    // (Mengetahui oleh Manager QA), data mentah tidak bisa diubah/dihapus
+    // siapa pun kecuali Administrator.
+    if (isPengkajianFinalApproved_(facilityKey, month)) {
+      return { error: "Pengkajian EM bulan ini sudah di-approve final oleh Manager QA — data mentah terkunci. Hubungi Administrator kalau perlu perubahan." };
     }
     // Kunci parsial: begitu Formulir QC bulan ini sudah final di-acc
     // Supervisor/Manager QC, QA tidak boleh lagi input/hapus data (QC tetap
@@ -486,11 +488,17 @@ function saveReportAuthed_(session, facilityKey, month, narrative) {
   const cfg = FACILITIES[facilityKey];
   if (!cfg) return { error: "Fasilitas tidak dikenal: " + facilityKey };
   const existing = getReport_(facilityKey, month);
-  // Pengkajian EM baru (belum ada baris tersimpan): hanya boleh MULAI dibuat
-  // setelah Formulir QC bulan ini selesai/final di-acc QC. Kalau sudah ada
-  // (sedang menyempurnakan draf), boleh terus disunting seperti biasa.
-  if (!existing.found && session.role !== "Administrator" && !isFormulirQCCompleteForMonth_(facilityKey, month)) {
-    return { error: "Formulir QC (FM.QC.062) bulan ini belum lengkap/final di-acc Supervisor/Manager QC. Pengkajian EM baru bisa dibuat setelah Formulir QC selesai." };
+  if (session.role !== "Administrator") {
+    // Sudah di-approve final (Mengetahui) -> narasi terkunci, cuma Admin yang bisa ubah.
+    if (existing.found && existing.signoff && existing.signoff.diperiksa && existing.signoff.diperiksa.nama) {
+      return { error: "Pengkajian EM bulan ini sudah di-approve final (Mengetahui) oleh Manager QA — narasi terkunci. Hubungi Administrator kalau perlu perubahan." };
+    }
+    // Pengkajian EM baru (belum ada baris tersimpan): hanya boleh MULAI dibuat
+    // setelah Formulir QC bulan ini selesai/final di-acc QC. Kalau sudah ada
+    // (sedang menyempurnakan draf), boleh terus disunting seperti biasa.
+    if (!existing.found && !isFormulirQCCompleteForMonth_(facilityKey, month)) {
+      return { error: "Formulir QC (FM.QC.062) bulan ini belum lengkap/final di-acc Supervisor/Manager QC. Pengkajian EM baru bisa dibuat setelah Formulir QC selesai." };
+    }
   }
   const signoff = (existing && existing.signoff) || emptySignoffServer_();
   const result = saveReport_(facilityKey, month, narrative, signoff);
@@ -595,8 +603,8 @@ function saveReportEMAuthed_(session, facilityKey, tanggal, noKontrolMedia, tang
   if (!cfg) return { error: "Fasilitas tidak dikenal: " + facilityKey };
   if (!tanggal) return { error: "Tanggal pemeriksaan wajib diisi." };
 
-  if (session.role !== "Administrator" && getReport_(facilityKey, tanggal.slice(0, 7)).found) {
-    return { error: "Pengkajian EM bulan ini sudah dibuat — Formulir QC terkunci. Hubungi Administrator kalau perlu perubahan." };
+  if (session.role !== "Administrator" && isPengkajianFinalApproved_(facilityKey, tanggal.slice(0, 7))) {
+    return { error: "Pengkajian EM bulan ini sudah di-approve final oleh Manager QA — Formulir QC terkunci. Hubungi Administrator kalau perlu perubahan." };
   }
 
   const found = findReportEMRow_(cfg.label, tanggal);
@@ -637,8 +645,8 @@ function approveReportEMAuthed_(session, facilityKey, tanggal) {
   const cfg = FACILITIES[facilityKey];
   if (!cfg) return { error: "Fasilitas tidak dikenal: " + facilityKey };
 
-  if (session.role !== "Administrator" && getReport_(facilityKey, tanggal.slice(0, 7)).found) {
-    return { error: "Pengkajian EM bulan ini sudah dibuat — Formulir QC terkunci. Hubungi Administrator kalau perlu perubahan." };
+  if (session.role !== "Administrator" && isPengkajianFinalApproved_(facilityKey, tanggal.slice(0, 7))) {
+    return { error: "Pengkajian EM bulan ini sudah di-approve final oleh Manager QA — Formulir QC terkunci. Hubungi Administrator kalau perlu perubahan." };
   }
 
   const found = findReportEMRow_(cfg.label, tanggal);
@@ -835,6 +843,15 @@ function getVerifySignoffReportEM_(facilityKey, tanggal) {
   if (full.error) return full;
   if (!full.found) return { found: false };
   return { found: true, analis: full.analis, diperiksa: full.diperiksa, updatedAt: full.updatedAt };
+}
+
+// Pengkajian EM suatu bulan dianggap "final" begitu slot tanda tangan
+// "Mengetahui" (approve final oleh Manager QA) sudah terisi — BUKAN cuma
+// begitu drafnya dibuat/disimpan. Sebelum final, QA masih boleh terus
+// menyempurnakan draf narasi.
+function isPengkajianFinalApproved_(facilityKey, month) {
+  const rep = getReport_(facilityKey, month);
+  return !!(rep.found && rep.signoff && rep.signoff.diperiksa && rep.signoff.diperiksa.nama);
 }
 
 // Formulir QC (Report_EM) suatu bulan dianggap "selesai" kalau SETIAP
