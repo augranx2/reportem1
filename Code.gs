@@ -312,7 +312,11 @@ function login_(username, password) {
   if (!user || !user.passwordHash) return { error: "Username atau password salah." };
   const hash = hashPassword_(password, user.salt);
   if (hash !== user.passwordHash) return { error: "Username atau password salah." };
-  if (!ROLE_LEVEL[user.role]) return { error: "Role akun ini belum diatur dengan benar. Hubungi Manager." };
+  // PENTING: pakai `=== undefined`, BUKAN `!ROLE_LEVEL[user.role]`. Role
+  // "Tamu" sengaja level-nya 0, dan 0 itu falsy di JavaScript — kalau pakai
+  // "!ROLE_LEVEL[...]" maka akun Tamu (level 0) akan salah dianggap "role
+  // tidak valid" dan gagal login terus meski hash/password-nya benar.
+  if (ROLE_LEVEL[user.role] === undefined) return { error: "Role akun ini belum diatur dengan benar. Hubungi Manager." };
 
   const token = generateToken_();
   const now = new Date();
