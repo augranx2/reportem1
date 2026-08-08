@@ -42,8 +42,10 @@ export function saveEntries(facility, month, entries, token) {
   return apiPost({ action: "saveEntries", facility, month, entries, token });
 }
 
-export function fetchReport(facility, month) {
-  return apiGet({ action: "report", facility, month });
+export function fetchReport(facility, month, token) {
+  const params = { action: "report", facility, month };
+  if (token) params.token = token;
+  return apiGet(params);
 }
 
 export function saveReport(facility, month, narrative, token) {
@@ -82,8 +84,19 @@ export function whoami(token) {
   return apiGet({ action: "whoami", token });
 }
 
-export function fetchReportEM(facility, tanggal) {
-  return apiGet({ action: "reportEM", facility, tanggal });
+export function fetchReportEM(facility, tanggal, token) {
+  const params = { action: "reportEM", facility, tanggal };
+  if (token) params.token = token;
+  return apiGet(params);
+}
+
+// Dipakai khusus halaman publik /verify (scan QR) — tetap bisa diakses tanpa
+// login, tapi cuma mengembalikan info tanda tangan, bukan isi narasi/formulir.
+export function fetchVerify(type, facility, period, slot) {
+  const params = type === "report"
+    ? { action: "verify", type, facility, tanggal: period, slot }
+    : { action: "verify", type, facility, month: period, slot };
+  return apiGet(params);
 }
 
 export function saveReportEM(facility, tanggal, noKontrolMedia, tanggalPembacaan, token) {

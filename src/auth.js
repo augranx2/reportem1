@@ -3,7 +3,7 @@ import { login as apiLogin, logout as apiLogout, whoami as apiWhoami } from "./a
 
 const STORAGE_KEY = "em_viable_session";
 
-const ROLE_LEVEL = { Staff: 1, Supervisor: 2, Manager: 3, "Assistant Manager": 3, Administrator: 4 };
+const ROLE_LEVEL = { Tamu: 0, Staff: 1, Supervisor: 2, Manager: 3, "Assistant Manager": 3, Administrator: 4 };
 
 function readStored() {
   try {

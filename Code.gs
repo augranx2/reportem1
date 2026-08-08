@@ -20,14 +20,39 @@
  *
  * Cara pakai User_Roles: isi Nama/Role/Departemen/Username seperti biasa.
  * Kolom Role diisi salah satu dari: Staff, Supervisor, Manager, Assistant Manager,
- * Administrator. "Assistant Manager" punya hak persis sama seperti Manager
+ * Administrator, Tamu. "Assistant Manager" punya hak persis sama seperti Manager
  * (di departemen yang sama). "Administrator" punya akses penuh ke semua fitur
  * dan lintas departemen (QC maupun QA), berapa pun isi kolom Departemen-nya.
+ * "Tamu" adalah level akses terendah yang tetap login: boleh melihat data hasil
+ * pengujian LENGKAP dengan grafik dan pembahasan/pengkajian QA (beda dari publik
+ * tanpa login yang cuma melihat data hasil pengujian saja), tapi tidak boleh
+ * input/edit/hapus/approve apa pun, dan tidak bisa melihat Formulir QC
+ * (FM.QC.062). Kolom Departemen untuk akun Tamu boleh dikosongkan.
  * Untuk set/reset password seseorang, ketik password barunya (teks biasa)
  * di kolom PasswordBaru baris orang itu — begitu ada orang login (siapa
  * saja), sistem otomatis mengubahnya jadi PasswordHash+Salt lalu
  * mengosongkan lagi kolom PasswordBaru (supaya password asli tidak pernah
  * tersimpan sebagai teks biasa).
+ *
+ * ALUR KERJA & PENGUNCIAN DATA (revisi terbaru):
+ * 1. Formulir QC (FM.QC.062, tab Report_EM) hanya bisa DILIHAT oleh akun
+ *    QC, QA, atau Administrator yang sudah login (publik/tanpa-login dan
+ *    Tamu tidak bisa melihat halaman ini sama sekali).
+ * 2. QA (siapa pun level-nya) boleh MELIHAT dan MENCETAK Formulir QC, tapi
+ *    tidak pernah bisa mengisi atau approve/acc — itu tetap khusus QC.
+ * 3. QA baru boleh MEMBUAT Pengkajian EM (tab Laporan_Narasi) untuk suatu
+ *    bulan setelah SEMUA Formulir QC bulan itu (satu per tanggal input
+ *    data) sudah final di-acc/di-Diperiksa oleh Supervisor/Manager QC.
+ * 4. Selama Formulir QC bulan itu belum final acc QC, QA (Supervisor ke
+ *    atas) tetap boleh bantu input/hapus data mentah. Begitu Manager/
+ *    Supervisor QC sudah approve Formulir QC (dianggap data selesai), QA
+ *    tidak bisa lagi mengedit/menghapus data mentah bulan itu (QC tetap
+ *    bisa).
+ * 5. Begitu Pengkajian EM suatu bulan sudah DIBUAT (baris tersimpan di
+ *    Laporan_Narasi), data mentah maupun Formulir QC bulan itu terkunci
+ *    total dari edit/hapus untuk SIAPA PUN kecuali Administrator. Narasi
+ *    Pengkajian EM sendiri tetap bisa disunting Supervisor/Manager QA
+ *    sampai di-approve final ("Mengetahui").
  */
 
 // ---------------------------------------------------------------------------
@@ -74,7 +99,11 @@ const REPORT_EM_FORM_NO = "FM.QC.062/R3";
 const REPORT_EM_PREV_FORM_NO = "FM.QC.062/R2";
 const REPORT_EM_PREV_TGL_BERLAKU = "27 September 2022";
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 jam
-const ROLE_LEVEL = { Staff: 1, Supervisor: 2, Manager: 3, "Assistant Manager": 3, Administrator: 4 };
+// Tamu sengaja di level 0 (paling rendah): tetap "login" (dapat token session
+// yang valid) supaya bisa dibedakan dari publik tanpa login, tapi levelnya di
+// bawah Staff jadi otomatis gagal di semua requireRole_() yang minta akses
+// input/edit/approve.
+const ROLE_LEVEL = { Tamu: 0, Staff: 1, Supervisor: 2, Manager: 3, "Assistant Manager": 3, Administrator: 4 };
 
 // ---------------------------------------------------------------------------
 // ENTRY POINTS
@@ -92,7 +121,7 @@ function doGet(e) {
         result = getEntries_(e.parameter.facility, e.parameter.month);
         break;
       case "report":
-        result = getReport_(e.parameter.facility, e.parameter.month);
+        result = getReportForViewer_(e.parameter.facility, e.parameter.month, e.parameter.token);
         break;
       case "statusIndex":
         result = getStatusIndex_(e.parameter.month);
@@ -104,7 +133,16 @@ function doGet(e) {
         result = getActivityLog_(e.parameter.token, e.parameter.month, e.parameter.facility);
         break;
       case "reportEM":
-        result = getReportEM_(e.parameter.facility, e.parameter.tanggal);
+        result = getReportEMForViewer_(e.parameter.facility, e.parameter.tanggal, e.parameter.token);
+        break;
+      case "verify":
+        // Halaman /verify (dibuka lewat scan QR) HARUS tetap bisa diakses
+        // publik tanpa login — makanya action ini terpisah dari "report" /
+        // "reportEM" di atas dan cuma mengembalikan info tanda tangan
+        // (bukan isi narasi/pembahasan lengkap).
+        result = e.parameter.type === "report"
+          ? getVerifySignoffReportEM_(e.parameter.facility, e.parameter.tanggal)
+          : getVerifySignoffPengkajian_(e.parameter.facility, e.parameter.month);
         break;
       default:
         result = { error: "Aksi tidak dikenal: " + action };
@@ -403,6 +441,20 @@ function saveEntriesAuthed_(session, facilityKey, month, entries) {
   const cfg = FACILITIES[facilityKey];
   if (!cfg) return { error: "Fasilitas tidak dikenal: " + facilityKey };
 
+  if (session.role !== "Administrator") {
+    // Kunci total: kalau Pengkajian EM bulan ini sudah dibuat, data mentah
+    // tidak bisa diubah/dihapus siapa pun kecuali Administrator.
+    if (getReport_(facilityKey, month).found) {
+      return { error: "Pengkajian EM bulan ini sudah dibuat — data mentah terkunci. Hubungi Administrator kalau perlu perubahan." };
+    }
+    // Kunci parsial: begitu Formulir QC bulan ini sudah final di-acc
+    // Supervisor/Manager QC, QA tidak boleh lagi input/hapus data (QC tetap
+    // boleh selama Pengkajian belum dibuat, dicek di atas).
+    if (!isQCInput && isFormulirQCCompleteForMonth_(facilityKey, month)) {
+      return { error: "Formulir QC bulan ini sudah final disetujui QC — QA tidak bisa lagi mengubah/menghapus data. Hubungi QC." };
+    }
+  }
+
   // Deteksi penghapusan: baris LAMA (id "row-N") yang hilang dari daftar baru.
   const before = getEntries_(facilityKey, month).entries || [];
   const submittedIds = {};
@@ -434,6 +486,12 @@ function saveReportAuthed_(session, facilityKey, month, narrative) {
   const cfg = FACILITIES[facilityKey];
   if (!cfg) return { error: "Fasilitas tidak dikenal: " + facilityKey };
   const existing = getReport_(facilityKey, month);
+  // Pengkajian EM baru (belum ada baris tersimpan): hanya boleh MULAI dibuat
+  // setelah Formulir QC bulan ini selesai/final di-acc QC. Kalau sudah ada
+  // (sedang menyempurnakan draf), boleh terus disunting seperti biasa.
+  if (!existing.found && session.role !== "Administrator" && !isFormulirQCCompleteForMonth_(facilityKey, month)) {
+    return { error: "Formulir QC (FM.QC.062) bulan ini belum lengkap/final di-acc Supervisor/Manager QC. Pengkajian EM baru bisa dibuat setelah Formulir QC selesai." };
+  }
   const signoff = (existing && existing.signoff) || emptySignoffServer_();
   const result = saveReport_(facilityKey, month, narrative, signoff);
   writeAuditLog_({
@@ -537,6 +595,10 @@ function saveReportEMAuthed_(session, facilityKey, tanggal, noKontrolMedia, tang
   if (!cfg) return { error: "Fasilitas tidak dikenal: " + facilityKey };
   if (!tanggal) return { error: "Tanggal pemeriksaan wajib diisi." };
 
+  if (session.role !== "Administrator" && getReport_(facilityKey, tanggal.slice(0, 7)).found) {
+    return { error: "Pengkajian EM bulan ini sudah dibuat — Formulir QC terkunci. Hubungi Administrator kalau perlu perubahan." };
+  }
+
   const found = findReportEMRow_(cfg.label, tanggal);
   const now = new Date();
   const isNew = found.rowIndex === -1;
@@ -574,6 +636,11 @@ function approveReportEMAuthed_(session, facilityKey, tanggal) {
   }
   const cfg = FACILITIES[facilityKey];
   if (!cfg) return { error: "Fasilitas tidak dikenal: " + facilityKey };
+
+  if (session.role !== "Administrator" && getReport_(facilityKey, tanggal.slice(0, 7)).found) {
+    return { error: "Pengkajian EM bulan ini sudah dibuat — Formulir QC terkunci. Hubungi Administrator kalau perlu perubahan." };
+  }
+
   const found = findReportEMRow_(cfg.label, tanggal);
   if (found.rowIndex === -1) return { error: "Belum ada draf Report Hasil EM untuk tanggal ini." };
 
@@ -724,6 +791,69 @@ function getReport_(facilityKey, month) {
     }
   }
   return { found: false };
+}
+
+// Pembungkus getReport_ untuk permintaan LIHAT (GET) dari browser:
+// - Sudah login (role apa pun, termasuk Tamu) -> lihat narasi & tanda tangan lengkap.
+// - Publik / tanpa login -> hanya info dasar (found/updatedAt), tanpa isi
+//   narasi/pembahasan/tanda tangan, sesuai permintaan: publik cuma boleh
+//   lihat data hasil pengujian, bukan pembahasan/pengkajian QA.
+function getReportForViewer_(facilityKey, month, token) {
+  const full = getReport_(facilityKey, month);
+  if (full.error) return full;
+  const session = token ? validateSession_(token) : null;
+  if (session) return full;
+  return { found: full.found, updatedAt: full.updatedAt, restricted: true };
+}
+
+// Pembungkus getReportEM_ (Formulir QC / FM.QC.062) untuk permintaan LIHAT:
+// hanya akun QC, QA, atau Administrator yang sudah login yang boleh melihat
+// formulir ini sama sekali — publik dan Tamu tidak bisa mengaksesnya.
+function getReportEMForViewer_(facilityKey, tanggal, token) {
+  const session = token ? validateSession_(token) : null;
+  const canView = session && (session.role === "Administrator" || session.departemen === "QC" || session.departemen === "QA");
+  if (!canView) {
+    return { error: "Formulir QC (FM.QC.062) hanya bisa dilihat oleh akun QC atau QA yang sudah login." };
+  }
+  return getReportEM_(facilityKey, tanggal);
+}
+
+// Dipakai khusus halaman publik /verify (scan QR): hanya mengembalikan info
+// tanda tangan (nama/jabatan/tanggal), TIDAK pernah mengembalikan isi
+// narasi/pembahasan. Ini sengaja tetap bisa diakses tanpa login supaya
+// siapa pun yang men-scan QR di dokumen fisik/PDF bisa memverifikasi
+// keasliannya.
+function getVerifySignoffPengkajian_(facilityKey, month) {
+  const full = getReport_(facilityKey, month);
+  if (full.error) return full;
+  if (!full.found) return { found: false };
+  return { found: true, signoff: full.signoff, updatedAt: full.updatedAt };
+}
+
+function getVerifySignoffReportEM_(facilityKey, tanggal) {
+  const full = getReportEM_(facilityKey, tanggal);
+  if (full.error) return full;
+  if (!full.found) return { found: false };
+  return { found: true, analis: full.analis, diperiksa: full.diperiksa, updatedAt: full.updatedAt };
+}
+
+// Formulir QC (Report_EM) suatu bulan dianggap "selesai" kalau SETIAP
+// tanggal yang punya data pengujian di bulan itu sudah punya baris
+// Report_EM DAN sudah di-"Diperiksa" (di-acc Supervisor/Manager QC).
+// Kalau belum ada data sama sekali di bulan itu, dianggap belum selesai.
+function isFormulirQCCompleteForMonth_(facilityKey, month) {
+  const cfg = FACILITIES[facilityKey];
+  if (!cfg) return false;
+  const entriesRes = getEntries_(facilityKey, month);
+  const dates = Array.from(
+    new Set((entriesRes.entries || []).map(function (e) { return e.tanggal; }).filter(Boolean))
+  );
+  if (dates.length === 0) return false;
+  return dates.every(function (tgl) {
+    const found = findReportEMRow_(cfg.label, tgl);
+    if (found.rowIndex === -1) return false;
+    return !!found.row[8]; // kolom I DiperiksaNama
+  });
 }
 
 function saveReport_(facilityKey, month, narrative, signoff) {

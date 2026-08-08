@@ -13,7 +13,7 @@ import {
   fetchReport, saveReport as apiSaveReport, fetchStatusIndex,
   generateNarrative, approveDikaji as apiApproveDikaji,
   approveMengetahui as apiApproveMengetahui, fetchActivityLog,
-  fetchReportEM, saveReportEM as apiSaveReportEM, approveReportEM as apiApproveReportEM,
+  fetchReportEM, saveReportEM as apiSaveReportEM, approveReportEM as apiApproveReportEM, fetchVerify,
 } from "./api.js";
 import { generateLocalNarrative } from "./narrativeGenerator.js";
 import { useAuth, hasAccess } from "./auth.js";
@@ -416,7 +416,7 @@ function AutoTextarea({ value, onChange, rows = 3, placeholder, className, readO
   );
 }
 
-function ClassSection({ kelas, entries, narrativeText, onNarrativeChange, readOnly = false }) {
+function ClassSection({ kelas, entries, narrativeText, onNarrativeChange, readOnly = false, showDiscussion = true }) {
   const hasContact = !!getLimit("contact", kelas);
   const hasAir = !!getLimit("air", kelas);
   return (
@@ -453,13 +453,16 @@ function ClassSection({ kelas, entries, narrativeText, onNarrativeChange, readOn
               </tbody>
             </table>
           </div>
-          <div className="flex flex-col gap-4 p-4">
-            <ParamChart entries={entries} kelas={kelas} parameter="settle" paramLabel="Settle Plate" />
-            {hasContact && <ParamChart entries={entries} kelas={kelas} parameter="contact" paramLabel="Contact Plate" />}
-            {hasAir && <ParamChart entries={entries} kelas={kelas} parameter="air" paramLabel="Air Sampler" />}
-          </div>
+          {showDiscussion && (
+            <div className="flex flex-col gap-4 p-4">
+              <ParamChart entries={entries} kelas={kelas} parameter="settle" paramLabel="Settle Plate" />
+              {hasContact && <ParamChart entries={entries} kelas={kelas} parameter="contact" paramLabel="Contact Plate" />}
+              {hasAir && <ParamChart entries={entries} kelas={kelas} parameter="air" paramLabel="Air Sampler" />}
+            </div>
+          )}
         </>
       )}
+      {showDiscussion && (
       <div className="border-t border-slate-100 p-4 avoid-break">
         <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">
           Hasil, Tren &amp; Kesimpulan Kelas {kelas}
@@ -473,6 +476,7 @@ function ClassSection({ kelas, entries, narrativeText, onNarrativeChange, readOn
           readOnly={readOnly}
         />
       </div>
+      )}
     </div>
   );
 }
@@ -759,7 +763,7 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
       setLoading(true);
       setErrorMsg("");
       try {
-        const res = await fetchReportEM(facilityKey, tanggal);
+        const res = await fetchReportEM(facilityKey, tanggal, token);
         if (cancelled) return;
         setMeta(res);
         setNoKontrolMedia(res.noKontrolMedia || "");
@@ -772,7 +776,7 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
     }
     load();
     return () => { cancelled = true; };
-  }, [facilityKey, tanggal]);
+  }, [facilityKey, tanggal, token]);
 
   const roomsThisDate = useMemo(
     () => entriesForMonth.filter((e) => e.tanggal === tanggal),
@@ -814,10 +818,13 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
   const diperiksa = meta?.diperiksa || { nama: "", tanggal: "" };
   const isApproved = !!diperiksa?.nama;
 
-  // Lapisan pengaman: walau tombolnya sudah disembunyikan dari QA di halaman
-  // sebelumnya, tetap dicek ulang di sini supaya panel ini benar-benar
-  // tidak bisa diakses selain oleh QC (atau Administrator).
-  const allowedHere = session?.role === "Administrator" || session?.departemen === "QC";
+  // Lapisan pengaman: walau tombolnya sudah disembunyikan dari yang tidak
+  // berhak di halaman sebelumnya, tetap dicek ulang di sini. Formulir QC
+  // (FM.QC.062) hanya boleh dilihat oleh akun QC atau QA yang sudah login
+  // (QA hanya lihat & cetak, tidak bisa input/approve — dikontrol lewat
+  // canInput/canApprove di bawah). Publik tanpa login dan akun Tamu tidak
+  // bisa membuka halaman ini sama sekali.
+  const allowedHere = session?.role === "Administrator" || session?.departemen === "QC" || session?.departemen === "QA";
   if (!allowedHere) {
     return (
       <div className="mx-auto max-w-2xl p-6">
@@ -825,7 +832,9 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
           <ChevronLeft size={16} /> Kembali ke Pengkajian EM
         </button>
         <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          Report Hasil EM (FM.QC.062) khusus untuk akun departemen QC.
+          {session
+            ? "Report Hasil EM (FM.QC.062) hanya bisa dilihat oleh akun departemen QC atau QA."
+            : "Report Hasil EM (FM.QC.062) hanya bisa dilihat oleh akun yang sudah login (QC/QA)."}
         </p>
       </div>
     );
@@ -1023,6 +1032,9 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
   // Administrator melihat & bisa akses SEMUA tombol, lintas departemen
   const isQA = isAdmin || session?.departemen === "QA";
   const isQC = isAdmin || session?.departemen === "QC";
+  // Grafik & pembahasan/pengkajian QA hanya untuk yang sudah login (Tamu ke
+  // atas). Publik tanpa login hanya boleh melihat data hasil pengujian.
+  const canViewDiscussion = !!session;
   const [mode, setMode] = useState("pengkajian"); // 'pengkajian' | 'reportEM'
 
   const [loading, setLoading] = useState(true);
@@ -1046,7 +1058,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
         const [rooms, ent, rep] = await Promise.all([
           fetchMaster(facilityKey),
           fetchEntries(facilityKey, monthKey),
-          fetchReport(facilityKey, monthKey),
+          fetchReport(facilityKey, monthKey, token),
         ]);
         if (cancelled) return;
         setMasterRooms(rooms);
@@ -1066,7 +1078,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
     }
     load();
     return () => { cancelled = true; };
-  }, [facilityKey, monthKey]);
+  }, [facilityKey, monthKey, token]);
 
   // Hanya kelas yang benar-benar ada datanya bulan ini yang ditampilkan &
   // dibahas di laporan — kalau suatu kelas memang berlaku untuk fasilitas
@@ -1086,7 +1098,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
 
   const reloadReport = useCallback(async () => {
     try {
-      const rep = await fetchReport(facilityKey, monthKey);
+      const rep = await fetchReport(facilityKey, monthKey, token);
       if (rep.found) {
         setNarrative({ ...emptyNarrative(), ...rep.narrative });
         setSignoff(rep.signoff || emptySignoff());
@@ -1094,7 +1106,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
     } catch {
       // biarkan, bukan blocking error
     }
-  }, [facilityKey, monthKey]);
+  }, [facilityKey, monthKey, token]);
 
   const saveEntriesOnly = useCallback(async () => {
     setSaving(true);
@@ -1174,7 +1186,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
       const stats = buildStatsSummary(classes, entries);
       let prevSummary = "Tidak ada data bulan sebelumnya.";
       try {
-        const prevRep = await fetchReport(facilityKey, prevMonthKey(monthKey));
+        const prevRep = await fetchReport(facilityKey, prevMonthKey(monthKey), token);
         if (prevRep.found) prevSummary = prevRep.narrative?.kesimpulanUmum || "Ada data bulan sebelumnya, namun tanpa ringkasan tertulis.";
       } catch {
         // biarkan default
@@ -1238,7 +1250,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
         </button>
         <div className="flex items-center gap-2">
           <input type="month" value={monthKey} onChange={(ev) => setMonthKey(ev.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
-          {isQC && (
+          {(isQC || isQA) && (
             <button onClick={() => setMode("reportEM")} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
               <Printer size={15} /> Report Hasil EM (FM.QC.062)
             </button>
@@ -1279,7 +1291,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
 
       {!session && (
         <div className="no-print mb-4 rounded-lg bg-blue-50 px-4 py-2.5 text-sm text-blue-700">
-          Anda melihat mode publik (lihat saja). Login sebagai Staff/Supervisor/Manager untuk mengisi atau menyetujui data.
+          Anda melihat mode publik — hanya data hasil pengujian yang ditampilkan. Login sebagai Tamu untuk melihat grafik &amp; pembahasan/pengkajian lengkap, atau sebagai Staff/Supervisor/Manager untuk mengisi/menyetujui data.
         </div>
       )}
 
@@ -1315,92 +1327,110 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
         <div className="mt-3"><LegendRow /></div>
       </div>
 
-      <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-bold text-slate-700">Pembahasan &amp; Narasi</h3>
-        {canEditQA ? (
-          <div className="flex gap-2">
-            <button onClick={() => handleGenerateNarrative(false)} disabled={generating || entries.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-              {generating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-              Buat Narasi dari Data
-            </button>
-            <button onClick={() => handleGenerateNarrative(true)} disabled={generating || entries.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">
-              {generating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-              {generating ? "Menyusun narasi..." : "Buat Narasi dengan AI"}
-            </button>
-          </div>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500">
-            <Lock size={12} /> Hanya Supervisor/Manager QA yang bisa menyusun narasi
-          </span>
-        )}
-      </div>
-      {aiError && <p className="no-print mb-3 text-sm text-red-600">{aiError}</p>}
+      {canViewDiscussion && (
+        <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-bold text-slate-700">Pembahasan &amp; Narasi</h3>
+          {canEditQA ? (
+            <div className="flex gap-2">
+              <button onClick={() => handleGenerateNarrative(false)} disabled={generating || entries.length === 0}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                {generating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                Buat Narasi dari Data
+              </button>
+              <button onClick={() => handleGenerateNarrative(true)} disabled={generating || entries.length === 0}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">
+                {generating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                {generating ? "Menyusun narasi..." : "Buat Narasi dengan AI"}
+              </button>
+            </div>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500">
+              <Lock size={12} /> Hanya Supervisor/Manager QA yang bisa menyusun narasi
+            </span>
+          )}
+        </div>
+      )}
+      {canViewDiscussion && aiError && <p className="no-print mb-3 text-sm text-red-600">{aiError}</p>}
 
-      <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
-        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Pendahuluan</label>
-        <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
-          rows={3} value={narrative.pendahuluan} onChange={(ev) => setNarrative({ ...narrative, pendahuluan: ev.target.value })} readOnly={!canEditQA} />
-      </div>
+      {canViewDiscussion && (
+        <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Pendahuluan</label>
+          <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+            rows={3} value={narrative.pendahuluan} onChange={(ev) => setNarrative({ ...narrative, pendahuluan: ev.target.value })} readOnly={!canEditQA} />
+        </div>
+      )}
 
+      {/* Tabel data hasil pengujian per kelas TETAP tampil untuk publik tanpa
+          login. Grafik & narasi pembahasan per kelas dikontrol lewat prop
+          showDiscussion di dalam ClassSection (hanya untuk yang sudah login). */}
       <div className="mb-5 space-y-4">
         {classes.map((k) => (
           <ClassSection key={k} kelas={k} entries={grouped[k]} narrativeText={narrative.perKelas[k]}
             onNarrativeChange={(val) => setNarrative({ ...narrative, perKelas: { ...narrative.perKelas, [k]: val } })}
-            readOnly={!canEditQA} />
+            readOnly={!canEditQA} showDiscussion={canViewDiscussion} />
         ))}
       </div>
 
-      <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
-        <h3 className="mb-3 text-sm font-bold text-slate-700">Kesimpulan Umum</h3>
-        <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
-          rows={8} value={narrative.kesimpulanUmum} onChange={(ev) => setNarrative({ ...narrative, kesimpulanUmum: ev.target.value })} readOnly={!canEditQA} />
-      </div>
+      {!canViewDiscussion && (
+        <div className="mb-8 rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
+          <Lock size={18} className="mx-auto mb-2 text-slate-300" />
+          Grafik, pembahasan, dan pengkajian QA hanya bisa dilihat oleh akun yang sudah login (minimal akun Tamu).
+        </div>
+      )}
 
-      <div className="mb-8 rounded-xl border border-slate-200 bg-white p-5 print-card">
-        <h3 className="mb-3 text-sm font-bold text-slate-700">Tanda Tangan</h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {[
-            { field: "dinilai", label: "Dikaji Oleh", canApprove: canEditQA, onApprove: handleApproveDikaji,
-              disabledNote: "Hanya Supervisor/Manager QA yang bisa menyetujui" },
-            { field: "diperiksa", label: "Mengetahui", canApprove: canApproveFinal, onApprove: handleApproveMengetahui,
-              disabledNote: signoff.dinilai?.nama ? "Hanya Manager QA yang bisa menyetujui final" : "Menunggu approval \"Dikaji Oleh\" terlebih dahulu" },
-          ].map(({ field, label, canApprove, onApprove, disabledNote }) => (
-            <div key={field} className="rounded-lg border border-slate-200 p-3">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
-              <div className="mb-3 flex h-24 items-center justify-center rounded border border-dashed border-slate-300 print:h-28">
-                {signoff[field]?.nama ? (
-                  <VerifyQR type="pengkajian" facility={facilityKey} period={monthKey} slot={field} size={68} />
-                ) : (
-                  <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
-                )}
-              </div>
-              {signoff[field]?.nama ? (
-                <div className="space-y-1 text-sm">
-                  <p className="font-semibold text-slate-700">{signoff[field].nama}</p>
-                  <p className="text-slate-500">{signoff[field].jabatan}</p>
-                  <p className="text-xs text-slate-400">{signoff[field].tanggal ? fullDateID(signoff[field].tanggal) : ""}</p>
+      {canViewDiscussion && (
+        <>
+          <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
+            <h3 className="mb-3 text-sm font-bold text-slate-700">Kesimpulan Umum</h3>
+            <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+              rows={8} value={narrative.kesimpulanUmum} onChange={(ev) => setNarrative({ ...narrative, kesimpulanUmum: ev.target.value })} readOnly={!canEditQA} />
+          </div>
+
+          <div className="mb-8 rounded-xl border border-slate-200 bg-white p-5 print-card">
+            <h3 className="mb-3 text-sm font-bold text-slate-700">Tanda Tangan</h3>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {[
+                { field: "dinilai", label: "Dikaji Oleh", canApprove: canEditQA, onApprove: handleApproveDikaji,
+                  disabledNote: "Hanya Supervisor/Manager QA yang bisa menyetujui" },
+                { field: "diperiksa", label: "Mengetahui", canApprove: canApproveFinal, onApprove: handleApproveMengetahui,
+                  disabledNote: signoff.dinilai?.nama ? "Hanya Manager QA yang bisa menyetujui final" : "Menunggu approval \"Dikaji Oleh\" terlebih dahulu" },
+              ].map(({ field, label, canApprove, onApprove, disabledNote }) => (
+                <div key={field} className="rounded-lg border border-slate-200 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+                  <div className="mb-3 flex h-24 items-center justify-center rounded border border-dashed border-slate-300 print:h-28">
+                    {signoff[field]?.nama ? (
+                      <VerifyQR type="pengkajian" facility={facilityKey} period={monthKey} slot={field} size={68} />
+                    ) : (
+                      <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
+                    )}
+                  </div>
+                  {signoff[field]?.nama ? (
+                    <div className="space-y-1 text-sm">
+                      <p className="font-semibold text-slate-700">{signoff[field].nama}</p>
+                      <p className="text-slate-500">{signoff[field].jabatan}</p>
+                      <p className="text-xs text-slate-400">{signoff[field].tanggal ? fullDateID(signoff[field].tanggal) : ""}</p>
+                    </div>
+                  ) : canApprove ? (
+                    <button onClick={onApprove} disabled={approving || (field === "diperiksa" && !signoff.dinilai?.nama)}
+                      className="no-print inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
+                      {approving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Setujui &amp; Tanda Tangani
+                    </button>
+                  ) : (
+                    <p className="no-print inline-flex items-center gap-1.5 text-xs text-slate-400"><Lock size={12} /> {disabledNote}</p>
+                  )}
                 </div>
-              ) : canApprove ? (
-                <button onClick={onApprove} disabled={approving || (field === "diperiksa" && !signoff.dinilai?.nama)}
-                  className="no-print inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                  {approving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Setujui &amp; Tanda Tangani
-                </button>
-              ) : (
-                <p className="no-print inline-flex items-center gap-1.5 text-xs text-slate-400"><Lock size={12} /> {disabledNote}</p>
-              )}
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
 
-      {canEditQA && (
-        <div className="no-print mb-8 flex justify-end">
-          <button onClick={saveNarrativeOnly} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
-            {saving ? <Loader2 size={15} className="animate-spin" /> : null} Simpan Narasi &amp; Pembahasan
-          </button>
-        </div>
+          {canEditQA && (
+            <div className="no-print mb-8 flex justify-end">
+              <button onClick={saveNarrativeOnly} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
+                {saving ? <Loader2 size={15} className="animate-spin" /> : null} Simpan Narasi &amp; Pembahasan
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -1476,7 +1506,7 @@ function TopBar({ session, onLoginClick, onLogout, view, setView }) {
           {session ? (
             <div className="flex items-center gap-2">
               <span className="hidden items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 sm:inline-flex">
-                <User size={13} /> {session.nama} · {session.role} {session.departemen}
+                <User size={13} /> {session.nama} · {session.role}{session.departemen ? ` ${session.departemen}` : ""}
               </span>
               <button onClick={onLogout} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
                 <LogOut size={14} /> Keluar
@@ -1571,7 +1601,7 @@ function VerifyPage() {
         return;
       }
       try {
-        const res = type === "report" ? await fetchReportEM(facilityKey, period) : await fetchReport(facilityKey, period);
+        const res = await fetchVerify(type, facilityKey, period, slot);
         if (!cancelled) setData(res);
       } catch (err) {
         if (!cancelled) setErrorMsg(err.message);
