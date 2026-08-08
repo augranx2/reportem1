@@ -513,7 +513,8 @@ function EntryRow({ entry, masterRooms, onChange, onDelete, readOnly = false, ca
     <tr className="border-b border-slate-100 align-top">
       <td className="px-2 py-1.5">
         <input type="date" className="w-36 rounded border border-slate-200 px-2 py-1 text-sm"
-          value={entry.tanggal || ""} onChange={(ev) => onChange({ ...entry, tanggal: ev.target.value })} />
+          value={entry.tanggal || ""} onChange={(ev) => onChange({ ...entry, tanggal: ev.target.value })}
+          onClick={(ev) => ev.currentTarget.showPicker?.()} />
       </td>
       <td className="px-2 py-1.5">
         <select className="w-56 rounded border border-slate-200 px-2 py-1 text-sm"
@@ -655,7 +656,7 @@ function Dashboard({ monthKey, setMonthKey, statusIndex, loadingStatus, statusEr
       <div className="mb-6 flex justify-end">
         <div>
           <label className="mb-1 block text-xs font-semibold text-slate-500">Periode</label>
-          <input type="month" value={monthKey} onChange={(ev) => setMonthKey(ev.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <input type="month" value={monthKey} onChange={(ev) => setMonthKey(ev.target.value)} onClick={(ev) => ev.currentTarget.showPicker?.()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         </div>
       </div>
 
@@ -951,6 +952,7 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
             <span className="text-slate-500">Tanggal Pembacaan</span> :
             {canInput && !isApproved ? (
               <input type="date" value={tanggalPembacaan} onChange={(ev) => setTanggalPembacaan(ev.target.value)}
+                onClick={(ev) => ev.currentTarget.showPicker?.()}
                 className="only-screen rounded border border-slate-300 px-2 py-0.5 text-sm" />
             ) : (
               <span className="font-medium">{tanggalPembacaan ? fullDateID(tanggalPembacaan) : "-"}</span>
@@ -1259,7 +1261,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
           <ChevronLeft size={16} /> Kembali ke Dashboard
         </button>
         <div className="flex items-center gap-2">
-          <input type="month" value={monthKey} onChange={(ev) => setMonthKey(ev.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+          <input type="month" value={monthKey} onChange={(ev) => setMonthKey(ev.target.value)} onClick={(ev) => ev.currentTarget.showPicker?.()} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
           {(isQC || isQA) && (
             <button onClick={() => setMode("reportEM")} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
               <Printer size={15} /> Report Hasil EM (FM.QC.062)
@@ -1709,6 +1711,11 @@ export default function App() {
     return <VerifyPage />;
   }
   const { session, checking, login: doLogin, logout: doLogout } = useAuth();
+  // Tombol print sudah disembunyikan dari Tamu/publik, tapi itu tidak
+  // mencegah Ctrl+P / File > Print browser. Makanya kita blok juga di level
+  // CSS (@media print) di bawah supaya Ctrl+P pun tidak menghasilkan cetakan
+  // yang berarti untuk Tamu/publik.
+  const canPrint = !!session && session.role !== "Tamu";
   const [showLogin, setShowLogin] = useState(false);
   const [view, setView] = useState("dashboard");
   const [facilityKey, setFacilityKey] = useState(null);
@@ -1750,9 +1757,13 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-full bg-slate-50">
+    <div className={`min-h-full bg-slate-50 ${!canPrint ? "print-blocked" : ""}`}>
+      <div className="print-only-notice">
+        Dokumen ini tidak bisa dicetak oleh akun Tamu atau publik tanpa login. Hubungi personil QC/QA untuk salinan resmi.
+      </div>
       <style>{`
         .only-print { display: none; }
+        .print-only-notice { display: none; }
         * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         @media print {
           .no-print { display: none !important; }
@@ -1760,6 +1771,18 @@ export default function App() {
           .only-print { display: block !important; }
           .print-card { box-shadow: none !important; border: 1px solid #cbd5e1 !important; page-break-inside: avoid; break-inside: avoid; }
           .avoid-break { page-break-inside: avoid; break-inside: avoid; }
+          /* Ctrl+P / File > Print browser tetap bisa dipicu siapa saja —
+             ini mencegah hasil cetakannya berisi apa pun kalau yang login
+             Tamu atau publik (tanpa login), walau tombol Print sudah
+             disembunyikan dari mereka di layar. */
+          .print-blocked > *:not(.print-only-notice) { display: none !important; }
+          .print-blocked .print-only-notice {
+            display: block !important;
+            padding: 5cm 2cm;
+            text-align: center;
+            font-size: 14px;
+            color: #334155;
+          }
         }
         @page {
           margin: 1.5cm 1.5cm 2cm 1.5cm;
