@@ -3,7 +3,9 @@ import { login as apiLogin, logout as apiLogout, whoami as apiWhoami } from "./a
 
 const STORAGE_KEY = "em_viable_session";
 
-const ROLE_LEVEL = { Tamu: 0, Staff: 1, Supervisor: 2, Manager: 3, "Assistant Manager": 3, Administrator: 4 };
+// Sengaja tidak ada role level 0 di sini juga, biar konsisten dengan
+// Code.gs (lihat komentar di sana) dan sama-sama kebal dari bug falsy-zero.
+const ROLE_LEVEL = { Tamu: 1, Staff: 2, Supervisor: 3, Manager: 4, "Assistant Manager": 4, Administrator: 5 };
 
 function readStored() {
   try {

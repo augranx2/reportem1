@@ -100,11 +100,14 @@ const REPORT_EM_FORM_NO = "FM.QC.062/R3";
 const REPORT_EM_PREV_FORM_NO = "FM.QC.062/R2";
 const REPORT_EM_PREV_TGL_BERLAKU = "27 September 2022";
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 jam
-// Tamu sengaja di level 0 (paling rendah): tetap "login" (dapat token session
-// yang valid) supaya bisa dibedakan dari publik tanpa login, tapi levelnya di
-// bawah Staff jadi otomatis gagal di semua requireRole_() yang minta akses
-// input/edit/approve.
-const ROLE_LEVEL = { Tamu: 0, Staff: 1, Supervisor: 2, Manager: 3, "Assistant Manager": 3, Administrator: 4 };
+// Sengaja TIDAK ada role dengan level 0 (Tamu mulai dari 1). Alasan: 0 itu
+// "falsy" di JavaScript, jadi kalau ada kode lain yang lupa dan mengecek
+// `!ROLE_LEVEL[role]` alih-alih `ROLE_LEVEL[role] === undefined`, role
+// bertingkat 0 akan salah dianggap "tidak dikenal". Ini pernah kejadian
+// (bug login Tamu gagal terus walau password benar) — sekarang levelnya
+// digeser semua supaya level terendah pun tetap truthy, jadi lebih kebal
+// dari bug serupa di masa depan.
+const ROLE_LEVEL = { Tamu: 1, Staff: 2, Supervisor: 3, Manager: 4, "Assistant Manager": 4, Administrator: 5 };
 
 // ---------------------------------------------------------------------------
 // ENTRY POINTS
@@ -312,10 +315,11 @@ function login_(username, password) {
   if (!user || !user.passwordHash) return { error: "Username atau password salah." };
   const hash = hashPassword_(password, user.salt);
   if (hash !== user.passwordHash) return { error: "Username atau password salah." };
-  // PENTING: pakai `=== undefined`, BUKAN `!ROLE_LEVEL[user.role]`. Role
-  // "Tamu" sengaja level-nya 0, dan 0 itu falsy di JavaScript — kalau pakai
-  // "!ROLE_LEVEL[...]" maka akun Tamu (level 0) akan salah dianggap "role
-  // tidak valid" dan gagal login terus meski hash/password-nya benar.
+  // PENTING: tetap pakai `=== undefined`, BUKAN `!ROLE_LEVEL[user.role]`.
+  // Level terendah sekarang sengaja tidak 0 (lihat komentar di ROLE_LEVEL),
+  // tapi kalau suatu saat ada tambahan role dengan level 0 lagi, cek dengan
+  // "!ROLE_LEVEL[...]" akan salah mengira role itu "tidak dikenal" walau
+  // sebenarnya valid — makanya cek eksplisit ke `undefined` lebih aman.
   if (ROLE_LEVEL[user.role] === undefined) return { error: "Role akun ini belum diatur dengan benar. Hubungi Manager." };
 
   const token = generateToken_();
