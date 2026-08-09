@@ -84,6 +84,10 @@ export function whoami(token) {
   return apiGet({ action: "whoami", token });
 }
 
+export function changePassword(token, oldPassword, newPassword) {
+  return apiPost({ action: "changePassword", token, oldPassword, newPassword });
+}
+
 export function fetchReportEM(facility, tanggal, token) {
   const params = { action: "reportEM", facility, tanggal };
   if (token) params.token = token;

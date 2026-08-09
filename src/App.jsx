@@ -15,6 +15,7 @@ import {
   generateNarrative, approveDikaji as apiApproveDikaji,
   approveMengetahui as apiApproveMengetahui, fetchActivityLog,
   fetchReportEM, saveReportEM as apiSaveReportEM, approveReportEM as apiApproveReportEM, fetchVerify,
+  changePassword as apiChangePassword,
 } from "./api.js";
 import { generateLocalNarrative } from "./narrativeGenerator.js";
 import { useAuth, hasAccess } from "./auth.js";
@@ -1612,7 +1613,98 @@ function LoginModal({ onClose, onLogin }) {
   );
 }
 
+function ProfileModal({ session, onClose }) {
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  const submit = async (ev) => {
+    ev.preventDefault();
+    setError("");
+    if (newPassword.length < 6) { setError("Password baru minimal 6 karakter."); return; }
+    if (newPassword !== confirmPassword) { setError("Konfirmasi password baru tidak cocok."); return; }
+    setSubmitting(true);
+    try {
+      const res = await apiChangePassword(session.token, oldPassword, newPassword);
+      if (res.error) { setError(res.error); return; }
+      setSuccess(true);
+      setOldPassword(""); setNewPassword(""); setConfirmPassword("");
+    } catch (err) {
+      setError(err.message || "Gagal mengubah password.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+        <div className="mb-4 flex items-center gap-2">
+          <User size={18} className="text-blue-700" />
+          <h3 className="text-base font-bold text-slate-800">Profil Saya</h3>
+        </div>
+
+        <div className="mb-4 space-y-1.5 rounded-lg bg-slate-50 px-4 py-3 text-sm">
+          <p className="flex justify-between"><span className="text-slate-500">Username</span> <span className="font-medium text-slate-700">{session.username}</span></p>
+          <p className="flex justify-between"><span className="text-slate-500">Nama Lengkap</span> <span className="font-medium text-slate-700">{session.nama}</span></p>
+          <p className="flex justify-between"><span className="text-slate-500">Jabatan</span> <span className="font-medium text-slate-700">{session.role}</span></p>
+          <p className="flex justify-between"><span className="text-slate-500">Departemen</span> <span className="font-medium text-slate-700">{session.departemen || "-"}</span></p>
+        </div>
+
+        {!showChangePw ? (
+          <div className="flex justify-between gap-2">
+            <button onClick={onClose} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
+              Tutup
+            </button>
+            <button onClick={() => setShowChangePw(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800">
+              <Lock size={14} /> Ganti Password
+            </button>
+          </div>
+        ) : success ? (
+          <div>
+            <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">Password berhasil diubah.</p>
+            <div className="flex justify-end">
+              <button onClick={onClose} className="rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800">
+                Tutup
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={submit}>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Password Lama</label>
+            <input autoFocus type="password" value={oldPassword} onChange={(ev) => setOldPassword(ev.target.value)}
+              className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Password Baru</label>
+            <input type="password" value={newPassword} onChange={(ev) => setNewPassword(ev.target.value)}
+              className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Konfirmasi Password Baru</label>
+            <input type="password" value={confirmPassword} onChange={(ev) => setConfirmPassword(ev.target.value)}
+              className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
+            {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
+            <div className="flex justify-between gap-2">
+              <button type="button" onClick={() => { setShowChangePw(false); setError(""); }}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                Kembali
+              </button>
+              <button type="submit" disabled={submitting || !oldPassword || !newPassword || !confirmPassword}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
+                {submitting ? <Loader2 size={14} className="animate-spin" /> : null} Simpan Password Baru
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TopBar({ session, onLoginClick, onLogout, view, setView }) {
+  const [showProfile, setShowProfile] = useState(false);
   return (
     <div className="no-print border-b border-slate-200 bg-white px-4 py-2.5">
       <div className="mx-auto flex max-w-5xl items-center justify-between">
@@ -1629,9 +1721,10 @@ function TopBar({ session, onLoginClick, onLogout, view, setView }) {
           )}
           {session ? (
             <div className="flex items-center gap-2">
-              <span className="hidden items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 sm:inline-flex">
+              <button onClick={() => setShowProfile(true)}
+                className="hidden items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200 sm:inline-flex">
                 <User size={13} /> {session.nama} · {session.role}{session.departemen ? ` ${session.departemen}` : ""}
-              </span>
+              </button>
               <button onClick={onLogout} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
                 <LogOut size={14} /> Keluar
               </button>
@@ -1643,6 +1736,7 @@ function TopBar({ session, onLoginClick, onLogout, view, setView }) {
           )}
         </div>
       </div>
+      {showProfile && session && <ProfileModal session={session} onClose={() => setShowProfile(false)} />}
     </div>
   );
 }

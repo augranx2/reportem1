@@ -198,6 +198,11 @@ function doPost(e) {
           return approveReportEMAuthed_(session, body.facility, body.tanggal);
         });
         break;
+      case "changePassword":
+        result = withAuth_(body.token, function (session) {
+          return changePasswordAuthed_(session, body.oldPassword, body.newPassword);
+        });
+        break;
       default:
         result = { error: "Aksi tidak dikenal: " + body.action };
     }
@@ -296,6 +301,7 @@ function findUserByUsername_(username) {
     const uname = String(row[3] || "").trim().toLowerCase();
     if (uname && uname === target) {
       return {
+        rowIndex: i + 2, // baris sheet sesungguhnya (1-based, +header)
         nama: row[0],
         role: String(row[1] || "").trim(),
         departemen: String(row[2] || "").trim(),
@@ -306,6 +312,24 @@ function findUserByUsername_(username) {
     }
   }
   return null;
+}
+
+function changePasswordAuthed_(session, oldPassword, newPassword) {
+  if (!oldPassword || !newPassword) return { error: "Password lama dan password baru wajib diisi." };
+  if (String(newPassword).length < 6) return { error: "Password baru minimal 6 karakter." };
+  const user = findUserByUsername_(session.username);
+  if (!user || !user.passwordHash) return { error: "Akun tidak ditemukan." };
+  const oldHash = hashPassword_(oldPassword, user.salt);
+  if (oldHash !== user.passwordHash) return { error: "Password lama salah." };
+  const newSalt = generateSalt_();
+  const newHash = hashPassword_(newPassword, newSalt);
+  const sheet = getUserRolesSheet_();
+  sheet.getRange(user.rowIndex, 5, 1, 3).setValues([["", newHash, newSalt]]); // E:PasswordBaru F:PasswordHash G:Salt
+  writeAuditLog_({
+    username: session.username, nama: session.nama, role: session.role, departemen: session.departemen,
+    aksi: "Ganti Password", fasilitas: "", bulan: "", detail: "",
+  });
+  return { ok: true };
 }
 
 function login_(username, password) {
