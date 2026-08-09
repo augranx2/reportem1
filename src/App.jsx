@@ -979,14 +979,14 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
                 <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-12 w-12 shrink-0 object-contain brightness-0 invert" />
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider text-blue-300">PT. Rama Emerald Multi Sukses</p>
-                  <h2 className="text-lg font-bold uppercase text-white">Pemantauan Lingkungan Viabel</h2>
+                  <h2 className="text-lg font-bold uppercase text-white">Formulir Pemantauan Lingkungan Viabel</h2>
                 </div>
               </div>
               <div className="text-right text-xs text-blue-200">
                 <p>No. : <span className="font-semibold text-white">{formNo}</span></p>
-                <p>Tgl Berlaku : {tglBerlakuR3 || "-"}</p>
-                <p>Menggantikan No. : {prevFormNo}</p>
-                <p>Tgl Berlaku : {prevTglBerlaku}</p>
+                <p>Tgl Berlaku : <span className="text-white">{tglBerlakuR3 || "-"}</span></p>
+                <p>Menggantikan No. : <span className="text-white">{prevFormNo}</span></p>
+                <p>Tgl Berlaku : <span className="text-white">{prevTglBerlaku}</span></p>
               </div>
             </div>
           </div>
