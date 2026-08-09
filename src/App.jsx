@@ -971,22 +971,26 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
           Belum ada data pengujian pada bulan ini untuk fasilitas {facility.label}. Input data dulu di halaman Pengkajian EM.
         </p>
       ) : (
-        <div className="rounded-xl border border-slate-300 bg-white p-6 print-card">
-          <div className="mb-4 flex items-start justify-between border-b border-slate-300 pb-4">
-            <div className="flex items-center gap-3">
-              <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-14 w-14 shrink-0 object-contain" />
-              <div>
-                <p className="text-xs font-semibold text-slate-500">PT. Rama Emerald Multi Sukses</p>
-                <h2 className="text-lg font-bold uppercase text-slate-800">Pemantauan Lingkungan Viabel</h2>
+        <div className="overflow-hidden rounded-xl border border-slate-300 print-card">
+          <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-slate-900 to-blue-900 px-6 py-5">
+            <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-blue-500/20 blur-3xl" />
+            <div className="relative flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+              <div className="flex items-start gap-3">
+                <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-12 w-12 shrink-0 object-contain brightness-0 invert" />
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-300">PT. Rama Emerald Multi Sukses</p>
+                  <h2 className="text-lg font-bold uppercase text-white">Pemantauan Lingkungan Viabel</h2>
+                </div>
+              </div>
+              <div className="text-right text-xs text-blue-200">
+                <p>No. : <span className="font-semibold text-white">{formNo}</span></p>
+                <p>Tgl Berlaku : {tglBerlakuR3 || "-"}</p>
+                <p>Menggantikan No. : {prevFormNo}</p>
+                <p>Tgl Berlaku : {prevTglBerlaku}</p>
               </div>
             </div>
-            <div className="text-right text-xs text-slate-500">
-              <p>No. : <span className="font-semibold text-slate-700">{formNo}</span></p>
-              <p>Tgl Berlaku : {tglBerlakuR3 || "-"}</p>
-              <p>Menggantikan No. : {prevFormNo}</p>
-              <p>Tgl Berlaku : {prevTglBerlaku}</p>
-            </div>
           </div>
+          <div className="bg-white p-6">
 
           <div className="mb-4 grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">
             <p><span className="text-slate-500">Nama Fasilitas</span> : <span className="font-medium">{facility.label}</span></p>
@@ -1118,6 +1122,7 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
               </button>
             </div>
           )}
+          </div>
         </div>
       )}
     </div>
@@ -1373,8 +1378,9 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
       </div>
 
       <div className="mb-5 overflow-hidden rounded-xl border border-slate-200 print-card">
-        <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-blue-900 px-5 py-4">
-          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-slate-900 to-blue-900 px-5 py-4">
+          <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-blue-500/20 blur-3xl" />
+          <div className="relative flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
             <div className="flex items-start gap-3">
               <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-12 w-12 shrink-0 object-contain brightness-0 invert" />
               <div>
