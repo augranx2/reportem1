@@ -1,28 +1,144 @@
-import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef, Component, Fragment } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
-  ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ReferenceLine, ReferenceArea, ResponsiveContainer,
+  ComposedChart,
+  Line,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceLine,
+  ReferenceArea,
+  ResponsiveContainer,
 } from "recharts";
 import {
-  ChevronLeft, Plus, Trash2, Printer, Loader2, Sparkles,
-  AlertTriangle, CheckCircle2, Building2, LogIn, LogOut, User, History, Lock,
-  LayoutGrid, XOctagon, FileQuestion, ChevronRight, ChevronDown, Calendar,
-  Menu, X, ShieldCheck, FlaskConical, LayoutDashboard
+  LogIn,
+  LogOut,
+  User,
+  Loader2,
+  Building2,
+  ChevronLeft,
+  Lock,
+  History,
+  Save,
+  FileCheck2,
+  ClipboardList,
+  Printer,
+  Sparkles,
+  Calendar,
+  Trash2,
+  CheckCheck,
+  CheckCircle2,
+  ChevronRight,
+  ChevronDown,
+  AlertTriangle,
+  KeyRound,
+  LayoutDashboard,
+  Menu,
+  X,
+  ShieldCheck,
+  Activity,
+  Layers,
+  ArrowLeft,
+  Boxes,
+  Download,
+  FlaskConical,
+  Microscope,
+  Stethoscope,
+  Warehouse,
+  PackageCheck,
+  Map,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
+  Bell,
+  AlertOctagon,
+  Clock,
+  FileText,
+  Thermometer,
+  Droplets,
+  Gauge,
+  FileSpreadsheet,
+  Plus,
+  LayoutGrid,
+  XOctagon,
+  FileQuestion,
 } from "lucide-react";
 import {
-  fetchMaster, fetchEntries, saveEntries as apiSaveEntries,
-  fetchReport, saveReport as apiSaveReport, fetchStatusIndex,
-  generateNarrative, approveDikaji as apiApproveDikaji,
-  approveMengetahui as apiApproveMengetahui, fetchActivityLog,
-  fetchReportEM, saveReportEM as apiSaveReportEM, approveReportEM as apiApproveReportEM, fetchVerify,
+  fetchMaster,
+  fetchEntries,
+  saveEntries as apiSaveEntries,
+  fetchReport,
+  saveReport as apiSaveReport,
+  fetchStatusIndex,
+  generateNarrative,
+  approveDikaji as apiApproveDikaji,
+  approveMengetahui as apiApproveMengetahui,
+  fetchActivityLog,
+  fetchReportEM,
+  saveReportEM as apiSaveReportEM,
+  approveReportEM as apiApproveReportEM,
+  fetchVerify,
   changePassword as apiChangePassword,
 } from "./api.js";
 import { generateLocalNarrative } from "./narrativeGenerator.js";
 import { useAuth, hasAccess } from "./auth.js";
 
-/* ========================================================================= MASTER FASILITAS & GRUP */
+/* =========================================================================
+   1. ERROR BOUNDARY
+   ========================================================================= */
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
 
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Critical Render Error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-6 bg-slate-950 text-white font-sans">
+          <div className="max-w-md w-full bg-slate-900 rounded-3xl p-8 border border-blue-900/50 shadow-2xl text-center space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-blue-950/80 text-blue-400 border border-blue-800 flex items-center justify-center mx-auto shadow-inner">
+              <AlertTriangle className="w-9 h-9" />
+            </div>
+            <h2 className="text-xl font-bold text-white tracking-tight">Terjadi Kesalahan Aplikasi</h2>
+            <p className="text-xs text-blue-200/80 leading-relaxed">
+              Sistem mendeteksi error pada komponen antarmuka:
+            </p>
+            <div className="text-left bg-black/80 p-3.5 rounded-xl border border-slate-800 text-[11px] font-mono text-blue-300 overflow-x-auto max-h-36">
+              {String(this.state.error?.message || this.state.error)}
+            </div>
+            <div className="pt-2">
+              <button
+                onClick={() => {
+                  this.setState({ hasError: false, error: null });
+                  window.location.href = "/";
+                }}
+                className="px-5 py-2.5 bg-blue-700 hover:bg-blue-600 text-white rounded-xl text-xs font-semibold transition shadow-md"
+              >
+                Muat Ulang Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/* =========================================================================
+   2. MASTER FASILITAS & GRUP EM VIABLE
+   ========================================================================= */
 const FACILITIES = [
   { key: "nbl", label: "Nonbetalaktam (NBL)", group: "nbl" },
   { key: "betalaktam", label: "Betalaktam (BL)", group: "bl" },
@@ -34,33 +150,15 @@ const FACILITIES = [
 const VIABLE_GROUPS = [
   { key: "nbl", title: "Nonbetalaktam (NBL)", singleKey: "nbl" },
   { key: "bl", title: "Betalaktam (BL)", singleKey: "betalaktam" },
-  { 
-    key: "sefa", 
-    title: "Sefalosporin", 
-    items: ["sefaNonSteril", "sefaSteril"] 
+  {
+    key: "sefa",
+    title: "Sefalosporin",
+    items: ["sefaNonSteril", "sefaSteril"],
   },
   { key: "qc", title: "Laboratorium QC", singleKey: "labMikro", icon: FlaskConical },
 ];
 
 const CLASS_ORDER = ["E", "D", "C", "B", "A"];
-
-function buildVerifyUrl(params) {
-  const qs = new URLSearchParams(params).toString();
-  return `${window.location.origin}/verify?${qs}`;
-}
-
-function VerifyQR({ type, facility, period, slot, size = 84 }) {
-  const params = type === "report"
-    ? { type, facility, tanggal: period, slot }
-    : { type, facility, month: period, slot };
-  const url = buildVerifyUrl(params);
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <QRCodeSVG value={url} size={size} level="M" bgColor="#ffffff" fgColor="#0f172a" />
-      <span className="text-center text-[9px] leading-tight text-slate-400">Scan untuk verifikasi</span>
-    </div>
-  );
-}
 
 const PARAM_DEFS = [
   { key: "settle", label: "Cawan Papar (Settle Plate)", short: "Settle Plate" },
@@ -84,8 +182,31 @@ const LIMITS = [
   { parameter: "air", kelas: "A", syarat: 1, alert: 1, action: 1, lessThan: true },
 ];
 
-/* ========================================================================= HELPERS */
+/* =========================================================================
+   3. QR VERIFIKASI DIGITAL (/verify)
+   ========================================================================= */
+function buildVerifyUrl(params) {
+  const qs = new URLSearchParams(params).toString();
+  return `${window.location.origin}/verify?${qs}`;
+}
 
+function VerifyQR({ type, facility, period, slot, size = 84 }) {
+  const params =
+    type === "report"
+      ? { type, facility, tanggal: period, slot }
+      : { type, facility, month: period, slot };
+  const url = buildVerifyUrl(params);
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <QRCodeSVG value={url} size={size} level="M" bgColor="#ffffff" fgColor="#0f172a" />
+      <span className="text-center text-[9px] leading-tight text-slate-400">Scan untuk verifikasi</span>
+    </div>
+  );
+}
+
+/* =========================================================================
+   4. HELPERS
+   ========================================================================= */
 function parseNumericValue(rawValue) {
   if (rawValue === null || rawValue === undefined || rawValue === "") return null;
   const str = String(rawValue).trim();
@@ -181,12 +302,21 @@ function buildStatsSummary(classes, entries) {
         .filter((pt) => pt.value !== null);
       const allBelowOne = limit.lessThan && numeric.every((pt) => pt.value < 1);
       const maxVal = numeric.length > 0 ? Math.max(...numeric.map((pt) => pt.value)) : null;
-      const topPoints = maxVal === null ? [] : numeric.filter((pt) => pt.value === maxVal).slice(0, 3)
-        .map((pt) => ({ room: pt.room, tanggal: pt.tanggal, value: displayValue(pt.raw, k, p.key) }));
+      const topPoints =
+        maxVal === null
+          ? []
+          : numeric
+              .filter((pt) => pt.value === maxVal)
+              .slice(0, 3)
+              .map((pt) => ({ room: pt.room, tanggal: pt.tanggal, value: displayValue(pt.raw, k, p.key) }));
 
       perParam[p.key] = {
-        label: p.short, alertLimit: limit.alert, actionLimit: limit.action, syaratLimit: limit.syarat,
-        allBelowOne, topValues: topPoints,
+        label: p.short,
+        alertLimit: limit.alert,
+        actionLimit: limit.action,
+        syaratLimit: limit.syarat,
+        allBelowOne,
+        topValues: topPoints,
       };
     });
 
@@ -197,7 +327,13 @@ function buildStatsSummary(classes, entries) {
         const s = getStatus(e[p.key], p.key, k);
         if (s.level > maxLevel) maxLevel = s.level;
         if (s.level >= 2) {
-          breaches.push({ room: e.roomName, tanggal: e.tanggal, parameter: p.short, value: displayValue(e[p.key], k, p.key), level: LEVEL_LABEL[s.level] });
+          breaches.push({
+            room: e.roomName,
+            tanggal: e.tanggal,
+            parameter: p.short,
+            value: displayValue(e[p.key], k, p.key),
+            level: LEVEL_LABEL[s.level],
+          });
         }
       });
     });
@@ -248,9 +384,10 @@ function emptySignoff() {
   };
 }
 
-/* ========================================================================= SIDEBAR COMPONENT (TEMA ASLI BIRU EM VIABLE) */
-
-function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status = {}, isOpen, onClose, hasAccess }) {
+/* =========================================================================
+   5. SIDEBAR COMPONENT (DENGAN KELAS no-print)
+   ========================================================================= */
+function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status = {}, isOpen, onClose, hasAccess, notifications = [] }) {
   const [expandedGroups, setExpandedGroups] = useState({ sefa: true });
 
   const toggleGroup = (k) => {
@@ -259,6 +396,11 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
 
   const navigateToDashboard = () => {
     setView("dashboard");
+    if (typeof window !== "undefined" && window.innerWidth < 1024) onClose?.();
+  };
+
+  const navigateToNotifications = () => {
+    setView("notifications");
     if (typeof window !== "undefined" && window.innerWidth < 1024) onClose?.();
   };
 
@@ -283,17 +425,20 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
     return "#22c55e";
   };
 
+  const criticalCount = (notifications || []).filter((n) => n.type === "critical").length;
+
   return (
     <>
       {isOpen && (
         <div
           onClick={onClose}
-          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs lg:hidden transition-opacity duration-300"
+          className="no-print fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs lg:hidden transition-opacity duration-300"
         />
       )}
 
+      {/* no-print ditambahkan langsung pada elemen aside */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-slate-300 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+        className={`no-print fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-slate-300 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -325,6 +470,31 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
               <LayoutDashboard size={16} />
               <span>Dashboard Global</span>
             </button>
+
+            {session && (
+              <button
+                onClick={navigateToNotifications}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+                  view === "notifications"
+                    ? "bg-blue-700 text-white shadow-lg shadow-blue-900/50"
+                    : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <Bell size={16} />
+                  <span>Pusat Notifikasi</span>
+                </div>
+                {notifications.length > 0 && (
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold text-white ${
+                      criticalCount > 0 ? "bg-red-600 animate-pulse" : "bg-amber-500"
+                    }`}
+                  >
+                    {notifications.length}
+                  </span>
+                )}
+              </button>
+            )}
 
             {session && hasAccess(session, "Supervisor") && (
               <button
@@ -434,10 +604,13 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
   );
 }
 
-/* ========================================================================= HEADER BAR */
-
-function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, setMonthKey, onToggleSidebar }) {
+/* =========================================================================
+   6. HEADER BAR
+   ========================================================================= */
+function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, setMonthKey, onToggleSidebar, notifications = [], onSelectNotification }) {
+  const [showNotifPopover, setShowNotifPopover] = useState(false);
   const avatarLetter = (session?.nama || session?.username || "U").charAt(0).toUpperCase();
+  const criticalCount = notifications.filter((n) => n.type === "critical").length;
 
   return (
     <header className="no-print sticky top-0 z-30 h-16 border-b border-slate-200 bg-white/90 backdrop-blur-md px-4 lg:px-8">
@@ -462,6 +635,94 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
               className="bg-transparent border-none outline-none font-semibold text-xs text-slate-800 [color-scheme:light]"
             />
           </label>
+
+          {session && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowNotifPopover(!showNotifPopover)}
+                className="relative p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition shadow-2xs"
+                title="Pusat Notifikasi & Alarm Integritas Data"
+              >
+                <Bell size={16} />
+                {notifications.length > 0 && (
+                  <span
+                    className={`absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full text-[9px] font-extrabold text-white animate-pulse shadow-sm ${
+                      criticalCount > 0 ? "bg-red-600" : "bg-amber-500"
+                    }`}
+                  >
+                    {notifications.length}
+                  </span>
+                )}
+              </button>
+
+              {showNotifPopover && (
+                <>
+                  <div onClick={() => setShowNotifPopover(false)} className="fixed inset-0 z-40 bg-transparent" />
+                  <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-3xl bg-white shadow-2xl border border-slate-200 z-50 overflow-hidden animate-fade-in">
+                    <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <Bell size={14} className="text-blue-700" />
+                        <h4 className="text-xs font-bold text-slate-800">Pusat Notifikasi &amp; Alert</h4>
+                      </div>
+                      <span className="text-[10px] font-semibold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                        {notifications.length} Item
+                      </span>
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 p-1 text-xs">
+                      {notifications.length === 0 ? (
+                        <div className="p-6 text-center text-slate-400 space-y-1">
+                          <CheckCircle2 size={24} className="mx-auto text-emerald-500 mb-1.5" />
+                          <p className="font-semibold text-slate-700 text-xs">Semua Parameter Terkendali</p>
+                          <p className="text-[10px] text-slate-400">Tidak ada deviasi batas limit ataupun tugas evaluasi.</p>
+                        </div>
+                      ) : (
+                        notifications.map((item, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => {
+                              onSelectNotification?.(item);
+                              setShowNotifPopover(false);
+                            }}
+                            className={`p-3 transition cursor-pointer hover:bg-slate-50 flex items-start gap-2.5 ${
+                              item.type === "critical"
+                                ? "bg-red-50/40"
+                                : item.type === "qa_global"
+                                ? "bg-blue-50/40"
+                                : "bg-amber-50/30"
+                            }`}
+                          >
+                            <div className="shrink-0 mt-0.5">
+                              {item.type === "critical" ? (
+                                <AlertOctagon size={16} className="text-red-600" />
+                              ) : item.type === "qa_global" ? (
+                                <FileText size={16} className="text-blue-600" />
+                              ) : (
+                                <Clock size={16} className="text-amber-600" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0 space-y-0.5">
+                              <div className="flex items-center justify-between gap-1">
+                                <p className="font-bold text-slate-800 text-[11px] truncate">{item.title}</p>
+                                <span className="text-[9px] text-slate-400 whitespace-nowrap">{item.time || "Hari Ini"}</span>
+                              </div>
+                              <p className="text-[11px] text-slate-600 leading-snug">{item.desc}</p>
+                              <div className="flex items-center gap-1.5 pt-0.5">
+                                <span className="text-[9px] font-semibold text-slate-700 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">
+                                  {item.facilityLabel}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {session ? (
             <div className="flex items-center gap-2">
@@ -499,8 +760,9 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
   );
 }
 
-/* ========================================================================= DASHBOARD OVERVIEW */
-
+/* =========================================================================
+   7. DASHBOARD OVERVIEW
+   ========================================================================= */
 function StatusPill({ level, hasData }) {
   if (!hasData) {
     return (
@@ -769,19 +1031,19 @@ function ClassSection({ kelas, entries, narrativeText, onNarrativeChange, readOn
         </>
       )}
       {showDiscussion && (
-      <div className="border-t border-slate-100 p-4 avoid-break">
-        <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Hasil, Tren &amp; Kesimpulan Kelas {kelas}
-        </label>
-        <AutoTextarea
-          className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
-          rows={14}
-          value={narrativeText || ""}
-          placeholder="Tulis ulasan hasil, tren, dan kesimpulan untuk kelas ini..."
-          onChange={(ev) => onNarrativeChange(ev.target.value)}
-          readOnly={readOnly}
-        />
-      </div>
+        <div className="border-t border-slate-100 p-4 avoid-break">
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Hasil, Tren &amp; Kesimpulan Kelas {kelas}
+          </label>
+          <AutoTextarea
+            className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            rows={14}
+            value={narrativeText || ""}
+            placeholder="Tulis ulasan hasil, tren, dan kesimpulan untuk kelas ini..."
+            onChange={(ev) => onNarrativeChange(ev.target.value)}
+            readOnly={readOnly}
+          />
+        </div>
       )}
     </div>
   );
@@ -963,7 +1225,7 @@ const STATUS_TINT = {
 
 const STATUS_ACCENT = { 0: "#cbd5e1", 1: "#22c55e", 2: "#22c55e", 3: "#f97316", 4: "#ef4444" };
 
-function Dashboard({ monthKey, setMonthKey, statusIndex, loadingStatus, statusError, onOpen }) {
+function DashboardOverview({ monthKey, setMonthKey, statusIndex, loadingStatus, statusError, onOpen }) {
   const perluCount = FACILITIES.filter((f) => (statusIndex[f.key]?.level || 0) === 3).length;
   const tmsCount = FACILITIES.filter((f) => (statusIndex[f.key]?.level || 0) >= 4).length;
   const terkendaliCount = FACILITIES.filter((f) => statusIndex[f.key]?.hasData && (statusIndex[f.key]?.level || 0) < 3).length;
@@ -1334,6 +1596,9 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
   );
 }
 
+/* =========================================================================
+   8. HALAMAN PENGKAJIAN QA
+   ========================================================================= */
 function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, session, token }) {
   const facility = FACILITIES.find((f) => f.key === facilityKey);
 
@@ -1750,8 +2015,9 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
   );
 }
 
-/* ========================================================================= AUTH UI */
-
+/* =========================================================================
+   9. AUTH & MODAL
+   ========================================================================= */
 function LoginModal({ onClose, onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -1892,6 +2158,9 @@ function ProfileModal({ session, onClose }) {
   );
 }
 
+/* =========================================================================
+   10. HALAMAN RIWAYAT AKTIVITAS
+   ========================================================================= */
 function ActivityLogPage({ token, onBack }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1959,8 +2228,9 @@ function ActivityLogPage({ token, onBack }) {
   );
 }
 
-/* ========================================================================= VERIFIKASI QR DOKUMEN */
-
+/* =========================================================================
+   11. HALAMAN VERIFIKASI QR DOKUMEN PUBLIK
+   ========================================================================= */
 function VerifyPage() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const type = params.get("type");
@@ -2063,8 +2333,9 @@ function VerifyPage() {
   );
 }
 
-/* ========================================================================= APP ROOT */
-
+/* =========================================================================
+   12. APP ROOT
+   ========================================================================= */
 export default function App() {
   if (typeof window !== "undefined" && window.location.pathname === "/verify") {
     return <VerifyPage />;
@@ -2112,100 +2383,102 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen bg-slate-50 text-slate-800 flex font-sans ${!canPrint ? "print-blocked" : ""}`}>
-      <div className="print-only-notice">
-        Dokumen ini tidak bisa dicetak oleh akun Tamu atau publik tanpa login. Hubungi personil QC/QA untuk salinan resmi.
-      </div>
-      <style>{`
-        .only-print { display: none; }
-        .print-only-notice { display: none; }
-        * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        @media print {
-          .no-print { display: none !important; }
-          .only-screen { display: none !important; }
-          .only-print { display: block !important; }
-          .print-card { box-shadow: none !important; border: 1px solid #cbd5e1 !important; page-break-inside: avoid; break-inside: avoid; }
-          .avoid-break { page-break-inside: avoid; break-inside: avoid; }
-          .print-content-shell {
-            padding-left: 0 !important;
-            margin-left: 0 !important;
-            width: 100% !important;
-            max-width: 100% !important;
+    <ErrorBoundary>
+      <div className={`min-h-screen bg-slate-50 text-slate-800 flex font-sans ${!canPrint ? "print-blocked" : ""}`}>
+        <div className="print-only-notice">
+          Dokumen ini tidak bisa dicetak oleh akun Tamu atau publik tanpa login. Hubungi personil QC/QA untuk salinan resmi.
+        </div>
+        <style>{`
+          .only-print { display: none; }
+          .print-only-notice { display: none; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          @media print {
+            .no-print, aside, header { display: none !important; }
+            .only-screen { display: none !important; }
+            .only-print { display: block !important; }
+            .print-card { box-shadow: none !important; border: 1px solid #cbd5e1 !important; page-break-inside: avoid !important; break-inside: avoid !important; }
+            .avoid-break { page-break-inside: avoid !important; break-inside: avoid !important; }
+            .print-content-shell {
+              padding-left: 0 !important;
+              margin-left: 0 !important;
+              width: 100% !important;
+              max-width: 100% !important;
+            }
+            .print-blocked > *:not(.print-only-notice) { display: none !important; }
+            .print-blocked .print-only-notice {
+              display: block !important;
+              padding: 5cm 2cm;
+              text-align: center;
+              font-size: 14px;
+              color: #334155;
+            }
           }
-          .print-blocked > *:not(.print-only-notice) { display: none !important; }
-          .print-blocked .print-only-notice {
-            display: block !important;
-            padding: 5cm 2cm;
-            text-align: center;
-            font-size: 14px;
-            color: #334155;
+          @page {
+            margin: 1cm 1cm 1.5cm 1cm;
           }
-        }
-        @page {
-          margin: 1.5cm 1.5cm 2cm 1.5cm;
-        }
-        @page {
-          @bottom-right {
-            content: "Halaman " counter(page);
-            font-size: 9px;
-            color: #64748b;
+          @page {
+            @bottom-right {
+              content: "Halaman " counter(page);
+              font-size: 9px;
+              color: #64748b;
+            }
           }
-        }
-      `}</style>
+        `}</style>
 
-      {/* SIDEBAR DENGAN TEMA ASLI EM VIABLE (SLATE / BLUE) */}
-      <Sidebar
-        session={session}
-        view={view}
-        setView={setView}
-        facilityKey={facilityKey}
-        setFacilityKey={setFacilityKey}
-        status={statusIndex}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        hasAccess={hasAccess}
-      />
-
-      {/* KONTEN UTAMA DENGAN OFFSET DESKTOP lg:pl-72 */}
-      <div className="flex-1 flex flex-col min-w-0 lg:pl-72 print-content-shell">
-        <HeaderBar
+        {/* SIDEBAR DENGAN NO-PRINT & TEMA BIRU SLATE */}
+        <Sidebar
           session={session}
-          onLoginClick={() => setShowLogin(true)}
-          onLogout={doLogout}
-          onProfileClick={() => setShowProfile(true)}
-          monthKey={monthKey}
-          setMonthKey={setMonthKey}
-          onToggleSidebar={() => setSidebarOpen(true)}
+          view={view}
+          setView={setView}
+          facilityKey={facilityKey}
+          setFacilityKey={setFacilityKey}
+          status={statusIndex}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          hasAccess={hasAccess}
         />
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-          {view === "dashboard" ? (
-            <Dashboard
-              monthKey={monthKey}
-              setMonthKey={setMonthKey}
-              statusIndex={statusIndex}
-              loadingStatus={loadingStatus}
-              statusError={statusError}
-              onOpen={(key) => { setFacilityKey(key); setView("detail"); }}
-            />
-          ) : view === "activity" ? (
-            <ActivityLogPage token={session?.token} onBack={() => setView("dashboard")} />
-          ) : (
-            <FacilityDetail
-              facilityKey={facilityKey}
-              monthKey={monthKey}
-              setMonthKey={setMonthKey}
-              onBack={() => setView("dashboard")}
-              onSaved={() => refreshStatus(monthKey)}
-              session={session}
-              token={session?.token}
-            />
-          )}
-        </main>
-      </div>
+        {/* KONTEN UTAMA DENGAN OFFSET DESKTOP lg:pl-72 & AUTO-RESET PADDING SAAT PRINT */}
+        <div className="flex-1 flex flex-col min-w-0 lg:pl-72 print-content-shell">
+          <HeaderBar
+            session={session}
+            onLoginClick={() => setShowLogin(true)}
+            onLogout={doLogout}
+            onProfileClick={() => setShowProfile(true)}
+            monthKey={monthKey}
+            setMonthKey={setMonthKey}
+            onToggleSidebar={() => setSidebarOpen(true)}
+          />
 
-      {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={doLogin} />}
-      {showProfile && session && <ProfileModal session={session} onClose={() => setShowProfile(false)} />}
-    </div>
+          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+            {view === "dashboard" ? (
+              <DashboardOverview
+                monthKey={monthKey}
+                setMonthKey={setMonthKey}
+                statusIndex={statusIndex}
+                loadingStatus={loadingStatus}
+                statusError={statusError}
+                onOpen={(key) => { setFacilityKey(key); setView("detail"); }}
+              />
+            ) : view === "activity" ? (
+              <ActivityLogPage token={session?.token} onBack={() => setView("dashboard")} />
+            ) : (
+              <FacilityDetail
+                facilityKey={facilityKey}
+                monthKey={monthKey}
+                setMonthKey={setMonthKey}
+                onBack={() => setView("dashboard")}
+                onSaved={() => refreshStatus(monthKey)}
+                session={session}
+                token={session?.token}
+              />
+            )}
+          </main>
+        </div>
+
+        {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={doLogin} />}
+        {showProfile && session && <ProfileModal session={session} onClose={() => setShowProfile(false)} />}
+      </div>
+    </ErrorBoundary>
   );
 }
