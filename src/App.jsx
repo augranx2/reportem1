@@ -248,9 +248,9 @@ function emptySignoff() {
   };
 }
 
-/* ========================================================================= SIDEBAR COMPONENT (EM NON-VIABLE DESIGN) */
+/* ========================================================================= SIDEBAR COMPONENT (TEMA ASLI BIRU EM VIABLE) */
 
-function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status = {}, onNeedLogin, isOpen, onClose, hasAccess }) {
+function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status = {}, isOpen, onClose, hasAccess }) {
   const [expandedGroups, setExpandedGroups] = useState({ sefa: true });
 
   const toggleGroup = (k) => {
@@ -275,7 +275,7 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
 
   const getDotColor = (key) => {
     const st = status?.[key];
-    if (!st?.hasData) return "#52525b";
+    if (!st?.hasData) return "#475569";
     const lvl = st?.level || 0;
     if (lvl >= 4) return "#ef4444";
     if (lvl === 3) return "#f97316";
@@ -288,24 +288,24 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
       {isOpen && (
         <div
           onClick={onClose}
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs lg:hidden transition-opacity duration-300"
+          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs lg:hidden transition-opacity duration-300"
         />
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 bg-zinc-950 text-zinc-300 border-r border-zinc-800/80 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-slate-300 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="h-16 flex items-center justify-between px-5 border-b border-zinc-800/80 bg-black/70">
+        <div className="h-16 flex items-center justify-between px-5 border-b border-slate-800 bg-slate-950/70">
           <button onClick={navigateToDashboard} className="flex items-center gap-3 text-left focus:outline-none">
             <img src="/logo-rama.png" alt="Logo" className="h-9 w-9 object-contain brightness-0 invert" />
             <div className="min-w-0">
               <p className="text-xs font-bold text-white tracking-tight leading-tight truncate">EM Viable (Mikro)</p>
-              <p className="text-[10px] font-medium text-rose-400 truncate">PT. Rama Emerald Multi Sukses</p>
+              <p className="text-[10px] font-medium text-blue-400 truncate">PT. Rama Emerald Multi Sukses</p>
             </div>
           </button>
-          <button onClick={onClose} className="text-zinc-400 hover:text-white lg:hidden p-1 rounded-lg">
+          <button onClick={onClose} className="text-slate-400 hover:text-white lg:hidden p-1 rounded-lg">
             <X size={18} />
           </button>
         </div>
@@ -313,13 +313,13 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
         <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6 scrollbar-thin">
           {/* Group 1: Menu Utama */}
           <div className="space-y-1">
-            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Menu Utama</p>
+            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Menu Utama</p>
             <button
               onClick={navigateToDashboard}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
                 view === "dashboard"
-                  ? "bg-rose-900 text-white shadow-lg shadow-rose-950/50"
-                  : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                  ? "bg-blue-700 text-white shadow-lg shadow-blue-900/50"
+                  : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
               }`}
             >
               <LayoutDashboard size={16} />
@@ -331,8 +331,8 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
                 onClick={navigateToActivity}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
                   view === "activity"
-                    ? "bg-rose-900 text-white shadow-lg shadow-rose-950/50"
-                    : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                    ? "bg-blue-700 text-white shadow-lg shadow-blue-900/50"
+                    : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
                 }`}
               >
                 <History size={16} />
@@ -341,9 +341,9 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
             )}
           </div>
 
-          {/* Group 2: Area & Fasilitas */}
+          {/* Group 2: Fasilitas Sampling */}
           <div className="space-y-1">
-            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Fasilitas Sampling</p>
+            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Fasilitas Sampling</p>
             {VIABLE_GROUPS.map((g) => {
               if (g.singleKey) {
                 const fac = FACILITIES.find((f) => f.key === g.singleKey);
@@ -357,12 +357,12 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
                     onClick={() => navigateToFacility(g.singleKey)}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
                       active
-                        ? "bg-rose-900/70 text-white border border-rose-700/50 font-semibold"
-                        : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                        ? "bg-blue-700/80 text-white border border-blue-500/50 font-semibold"
+                        : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
                     }`}
                   >
                     <div className="flex items-center gap-2.5 truncate">
-                      <SingleIcon size={14} className="text-zinc-400 shrink-0" />
+                      <SingleIcon size={14} className="text-slate-400 shrink-0" />
                       <span className="truncate">{fac?.label || g.title}</span>
                     </div>
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ background: dotColor }} />
@@ -379,21 +379,21 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
                   <button
                     onClick={() => toggleGroup(g.key)}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                      isGroupActive ? "text-rose-300" : "text-zinc-300 hover:bg-zinc-900"
+                      isGroupActive ? "text-blue-300" : "text-slate-300 hover:bg-slate-800/70"
                     }`}
                   >
                     <div className="flex items-center gap-2.5 truncate">
-                      <GroupIcon size={14} className="text-zinc-400 shrink-0" />
+                      <GroupIcon size={14} className="text-slate-400 shrink-0" />
                       <span className="truncate">{g.title}</span>
                     </div>
                     <ChevronDown
                       size={14}
-                      className={`text-zinc-500 transition-transform duration-200 ${isOpenGroup ? "rotate-180" : ""}`}
+                      className={`text-slate-500 transition-transform duration-200 ${isOpenGroup ? "rotate-180" : ""}`}
                     />
                   </button>
 
                   {isOpenGroup && (
-                    <div className="pl-4 pr-1 py-1 space-y-0.5 border-l border-zinc-800 ml-4">
+                    <div className="pl-4 pr-1 py-1 space-y-0.5 border-l border-slate-800 ml-4">
                       {g.items.map((facKey) => {
                         const fac = FACILITIES.find((f) => f.key === facKey);
                         const active = view === "detail" && facilityKey === facKey;
@@ -405,8 +405,8 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
                             onClick={() => navigateToFacility(facKey)}
                             className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] transition ${
                               active
-                                ? "bg-rose-900 text-white font-semibold"
-                                : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                                ? "bg-blue-700 text-white font-semibold"
+                                : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
                             }`}
                           >
                             <span className="truncate">{fac?.label || facKey}</span>
@@ -422,8 +422,8 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
           </div>
         </div>
 
-        <div className="px-4 py-3 border-t border-zinc-800/80 bg-black/70 text-[10px] text-zinc-400 flex justify-between items-center select-none">
-          <span className="font-mono text-zinc-400">QA.FM.156 / POS.QC.036</span>
+        <div className="px-4 py-3 border-t border-slate-800 bg-slate-950/80 text-[10px] text-slate-400 flex justify-between items-center select-none">
+          <span className="font-mono text-slate-400">QA.FM.156 / POS.QC.036</span>
           <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             Online Sync
@@ -454,7 +454,7 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
 
         <div className="flex items-center gap-2.5">
           <label className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 shadow-2xs">
-            <Calendar size={13} className="text-rose-800" />
+            <Calendar size={13} className="text-blue-700" />
             <input
               type="month"
               value={monthKey}
@@ -469,7 +469,7 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
                 onClick={onProfileClick}
                 className="flex items-center gap-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 px-3 py-1.5 text-xs font-semibold text-slate-700 transition"
               >
-                <div className="w-6 h-6 rounded-lg bg-rose-900 text-white flex items-center justify-center text-[10px] font-bold">
+                <div className="w-6 h-6 rounded-lg bg-blue-700 text-white flex items-center justify-center text-[10px] font-bold">
                   {avatarLetter}
                 </div>
                 <div className="hidden sm:block text-left leading-tight">
@@ -479,7 +479,7 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
               </button>
               <button
                 onClick={onLogout}
-                className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-rose-50 hover:text-rose-700 transition"
+                className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-blue-700 transition"
                 title="Keluar"
               >
                 <LogOut size={16} />
@@ -488,7 +488,7 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
           ) : (
             <button
               onClick={onLoginClick}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-900 hover:bg-rose-950 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition"
             >
               <LogIn size={14} /> Masuk
             </button>
@@ -970,14 +970,14 @@ function Dashboard({ monthKey, setMonthKey, statusIndex, loadingStatus, statusEr
   const belumAdaCount = FACILITIES.filter((f) => !statusIndex[f.key]?.hasData).length;
   return (
     <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-black via-zinc-950 to-rose-950 p-6 sm:p-8 text-white shadow-xl">
-        <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-rose-600/20 blur-3xl animate-pulse" />
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-blue-900 p-6 sm:p-8 text-white shadow-xl">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-blue-500/20 blur-3xl animate-pulse" />
         <div className="relative space-y-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/20 border border-rose-500/30 px-3 py-0.5 text-[11px] font-semibold text-rose-200">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/20 border border-blue-500/30 px-3 py-0.5 text-[11px] font-semibold text-blue-200">
             <ShieldCheck size={13} /> Sistem Pemantauan CPOB Viable (Mikrobiologi)
           </span>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Status Fasilitas EM Viable</h1>
-          <p className="text-xs sm:text-sm text-rose-100/80 max-w-2xl leading-relaxed">
+          <p className="text-xs sm:text-sm text-blue-100/80 max-w-2xl leading-relaxed">
             Rekap pengkajian trend Environment Monitoring (EM) Viable mikrobiologi seluruh fasilitas produksi periode <b>{monthLabel(monthKey)}</b>.
           </p>
         </div>
@@ -1010,19 +1010,19 @@ function Dashboard({ monthKey, setMonthKey, statusIndex, loadingStatus, statusEr
             const tint = STATUS_TINT[level];
             return (
               <button key={f.key} onClick={() => onOpen(f.key)}
-                className="group flex w-full items-center justify-between overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-xs transition hover:-translate-y-0.5 hover:border-rose-400 hover:shadow-md">
+                className="group flex w-full items-center justify-between overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-xs transition hover:-translate-y-0.5 hover:border-blue-400 hover:shadow-md">
                 <div className="flex items-center gap-3.5">
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background: tint.bg, color: tint.fg }}>
                     <Building2 size={20} />
                   </span>
                   <div>
-                    <p className="font-bold text-slate-800 text-sm group-hover:text-rose-900 transition-colors">{f.label}</p>
+                    <p className="font-bold text-slate-800 text-sm group-hover:text-blue-900 transition-colors">{f.label}</p>
                     <p className="text-xs text-slate-400">{loadingStatus ? "Memuat..." : st?.hasData ? "Ada data bulan ini" : "Belum ada data bulan ini"}</p>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {loadingStatus ? <Loader2 className="animate-spin text-slate-300" size={18} /> : <StatusPill level={st?.level || 0} hasData={!!st?.hasData} />}
-                  <ChevronRight size={16} className="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-rose-800" />
+                  <ChevronRight size={16} className="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-800" />
                 </div>
               </button>
             );
@@ -1792,7 +1792,7 @@ function LoginModal({ onClose, onLogin }) {
               Batal
             </button>
             <button type="submit" disabled={submitting || !username || !password}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-rose-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-950 disabled:opacity-60">
+              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
               {submitting ? <Loader2 size={14} className="animate-spin" /> : null} Masuk
             </button>
           </div>
@@ -1833,7 +1833,7 @@ function ProfileModal({ session, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
         <div className="mb-4 flex items-center gap-2">
-          <User size={18} className="text-rose-700" />
+          <User size={18} className="text-blue-700" />
           <h3 className="text-base font-bold text-slate-800">Profil Saya</h3>
         </div>
 
@@ -1850,7 +1850,7 @@ function ProfileModal({ session, onClose }) {
               Tutup
             </button>
             <button onClick={() => setShowChangePw(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-rose-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-950">
+              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800">
               <Lock size={14} /> Ganti Password
             </button>
           </div>
@@ -1858,7 +1858,7 @@ function ProfileModal({ session, onClose }) {
           <div>
             <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">Password berhasil diubah.</p>
             <div className="flex justify-end">
-              <button onClick={onClose} className="rounded-lg bg-rose-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-950">
+              <button onClick={onClose} className="rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800">
                 Tutup
               </button>
             </div>
@@ -1867,13 +1867,13 @@ function ProfileModal({ session, onClose }) {
           <form onSubmit={submit}>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Password Lama</label>
             <input autoFocus type="password" value={oldPassword} onChange={(ev) => setOldPassword(ev.target.value)}
-              className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-rose-400 focus:outline-none" />
+              className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Password Baru</label>
             <input type="password" value={newPassword} onChange={(ev) => setNewPassword(ev.target.value)}
-              className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-rose-400 focus:outline-none" />
+              className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Konfirmasi Password Baru</label>
             <input type="password" value={confirmPassword} onChange={(ev) => setConfirmPassword(ev.target.value)}
-              className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-rose-400 focus:outline-none" />
+              className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
             {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
             <div className="flex justify-between gap-2">
               <button type="button" onClick={() => { setShowChangePw(false); setError(""); }}
@@ -1881,7 +1881,7 @@ function ProfileModal({ session, onClose }) {
                 Kembali
               </button>
               <button type="submit" disabled={submitting || !oldPassword || !newPassword || !confirmPassword}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-950 disabled:opacity-60">
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
                 {submitting ? <Loader2 size={14} className="animate-spin" /> : null} Simpan Password Baru
               </button>
             </div>
@@ -1937,7 +1937,7 @@ function ActivityLogPage({ token, onBack }) {
                   <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
                     {l.role} {l.departemen}
                   </span>
-                  <span className="font-semibold text-rose-900 bg-rose-50 px-2.5 py-0.5 rounded-full text-[11px] border border-rose-200/60">
+                  <span className="font-semibold text-blue-900 bg-blue-50 px-2.5 py-0.5 rounded-full text-[11px] border border-blue-200/60">
                     {l.aksi}
                   </span>
                   {l.fasilitas && (
@@ -2121,7 +2121,7 @@ export default function App() {
         .print-only-notice { display: none; }
         * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         @media print {
-          .no-print, aside, header { display: none !important; }
+          .no-print { display: none !important; }
           .only-screen { display: none !important; }
           .only-print { display: block !important; }
           .print-card { box-shadow: none !important; border: 1px solid #cbd5e1 !important; page-break-inside: avoid; break-inside: avoid; }
@@ -2153,7 +2153,7 @@ export default function App() {
         }
       `}</style>
 
-      {/* SIDEBAR DENGAN DESAIN EM NON VIABLE */}
+      {/* SIDEBAR DENGAN TEMA ASLI EM VIABLE (SLATE / BLUE) */}
       <Sidebar
         session={session}
         view={view}
@@ -2161,7 +2161,6 @@ export default function App() {
         facilityKey={facilityKey}
         setFacilityKey={setFacilityKey}
         status={statusIndex}
-        onNeedLogin={() => setShowLogin(true)}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         hasAccess={hasAccess}
