@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, Component, Fragment } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef, Component } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ComposedChart,
@@ -9,7 +9,6 @@ import {
   CartesianGrid,
   Tooltip,
   ReferenceLine,
-  ReferenceArea,
   ResponsiveContainer,
 } from "recharts";
 import {
@@ -60,10 +59,6 @@ import {
   Droplets,
   Gauge,
   FileSpreadsheet,
-  Plus,
-  LayoutGrid,
-  XOctagon,
-  FileQuestion,
 } from "lucide-react";
 import {
   fetchMaster,
@@ -72,18 +67,25 @@ import {
   fetchReport,
   saveReport as apiSaveReport,
   fetchStatusIndex,
-  generateNarrative,
   approveDikaji as apiApproveDikaji,
   approveMengetahui as apiApproveMengetahui,
   fetchActivityLog,
-  fetchReportEM,
-  saveReportEM as apiSaveReportEM,
-  approveReportEM as apiApproveReportEM,
   fetchVerify,
-  changePassword as apiChangePassword,
+  generateNarrative,
+  fetchFormulirBulanan,
+  approveKepalaBagian as apiApproveKepalaBagian,
+  approveManagerQAFormulir as apiApproveManagerQAFormulir,
+  approveOpr as apiApproveOpr,
+  approveSpv as apiApproveSpv,
+  approveDay as apiApproveDay,
 } from "./api.js";
-import { generateLocalNarrative } from "./narrativeGenerator.js";
-import { useAuth, hasAccess } from "./auth.js";
+import { useAuth, hasAccess, hasFacilityAccess } from "./auth.js";
+import {
+  buildFacilityStats,
+  generateLocalNarrative,
+  fullDateID,
+  monthLabelID,
+} from "./narrativeGenerator.js";
 
 /* =========================================================================
    1. ERROR BOUNDARY
@@ -105,16 +107,16 @@ class ErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center p-6 bg-slate-950 text-white font-sans">
-          <div className="max-w-md w-full bg-slate-900 rounded-3xl p-8 border border-blue-900/50 shadow-2xl text-center space-y-4">
-            <div className="w-16 h-16 rounded-2xl bg-blue-950/80 text-blue-400 border border-blue-800 flex items-center justify-center mx-auto shadow-inner">
+        <div className="min-h-screen flex items-center justify-center p-6 bg-zinc-950 text-white font-sans">
+          <div className="max-w-md w-full bg-zinc-900 rounded-3xl p-8 border border-rose-900/50 shadow-2xl text-center space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-rose-950/80 text-rose-400 border border-rose-800 flex items-center justify-center mx-auto shadow-inner">
               <AlertTriangle className="w-9 h-9" />
             </div>
             <h2 className="text-xl font-bold text-white tracking-tight">Terjadi Kesalahan Aplikasi</h2>
-            <p className="text-xs text-blue-200/80 leading-relaxed">
+            <p className="text-xs text-rose-200/80 leading-relaxed">
               Sistem mendeteksi error pada komponen antarmuka:
             </p>
-            <div className="text-left bg-black/80 p-3.5 rounded-xl border border-slate-800 text-[11px] font-mono text-blue-300 overflow-x-auto max-h-36">
+            <div className="text-left bg-black/80 p-3.5 rounded-xl border border-zinc-800 text-[11px] font-mono text-rose-300 overflow-x-auto max-h-36">
               {String(this.state.error?.message || this.state.error)}
             </div>
             <div className="pt-2">
@@ -123,7 +125,7 @@ class ErrorBoundary extends Component {
                   this.setState({ hasError: false, error: null });
                   window.location.href = "/";
                 }}
-                className="px-5 py-2.5 bg-blue-700 hover:bg-blue-600 text-white rounded-xl text-xs font-semibold transition shadow-md"
+                className="px-5 py-2.5 bg-rose-900 hover:bg-rose-800 text-white rounded-xl text-xs font-semibold transition shadow-md"
               >
                 Muat Ulang Dashboard
               </button>
@@ -137,334 +139,508 @@ class ErrorBoundary extends Component {
 }
 
 /* =========================================================================
-   2. MASTER FASILITAS & GRUP EM VIABLE
+   2. MASTER FASILITAS & GRUP
    ========================================================================= */
 const FACILITIES = [
-  { key: "nbl", label: "Nonbetalaktam (NBL)", group: "nbl" },
-  { key: "betalaktam", label: "Betalaktam (BL)", group: "bl" },
-  { key: "sefaNonSteril", label: "Sefalosporin Non Steril", group: "sefa" },
-  { key: "sefaSteril", label: "Sefalosporin Steril", group: "sefa" },
-  { key: "labMikro", label: "Laboratorium Mikrobiologi", group: "qc" },
+  { key: "nblProduksi", label: "NBL Produksi", department: "Produksi", group: "nbl" },
+  { key: "nblKemasan", label: "NBL Kemasan", department: "Kemasan", altDepartment: "Produksi", group: "nbl" },
+  { key: "gbbNbl", label: "GBB NBL", department: "GBB", altDepartment: "PPIC", group: "nbl" },
+
+  { key: "blProduksi", label: "BL Produksi", department: "Produksi", group: "bl" },
+  { key: "blKemasan", label: "BL Kemasan", department: "Kemasan", altDepartment: "Produksi", group: "bl" },
+  { key: "gbbBl", label: "GBB BL", department: "GBB", altDepartment: "PPIC", group: "bl" },
+
+  { key: "sefaNonSterilProduksi", label: "Sefa Non Steril Produksi", department: "Produksi", group: "sefaNonSteril" },
+  { key: "sefaNonSterilKemasan", label: "Sefa Non Steril Kemasan", department: "Kemasan", altDepartment: "Produksi", group: "sefaNonSteril" },
+  { key: "gbbSefa", label: "GBB SEFA", department: "GBB", altDepartment: "PPIC", group: "sefaNonSteril" },
+
+  { key: "sefaSterilProduksi", label: "Sefa Steril Produksi", department: "Produksi", group: "sefaSteril" },
+  { key: "sefaSterilKemasan", label: "Sefa Steril Kemasan", department: "Kemasan", altDepartment: "Produksi", group: "sefaSteril" },
+
+  { key: "qc", label: "Laboratorium QC", department: "QC", group: "qc" },
+  { key: "rnd", label: "Research and Development (RND)", department: "RND", group: "rnd" },
+  { key: "pkrt", label: "Perbekalan Kesehatan Rumah Tangga (PKRT)", department: "PKRT", altDepartment: "Produksi", group: "pkrt" },
+  { key: "alkes", label: "Alat Kesehatan (Alkes)", department: "PKRT", altDepartment: "Produksi", group: "alkes" },
+  { key: "gbj", label: "Gudang Barang Jadi (GBJ)", department: "GBJ", altDepartment: "PPIC", group: "gbj" },
+  { key: "gbk", label: "Gudang Bahan Kemas (GBK)", department: "GBK", altDepartment: "PPIC", group: "gbk" },
 ];
 
-const VIABLE_GROUPS = [
-  { key: "nbl", title: "Nonbetalaktam (NBL)", singleKey: "nbl" },
-  { key: "bl", title: "Betalaktam (BL)", singleKey: "betalaktam" },
-  {
-    key: "sefa",
-    title: "Sefalosporin",
-    items: ["sefaNonSteril", "sefaSteril"],
-  },
-  { key: "qc", title: "Laboratorium QC", singleKey: "labMikro", icon: FlaskConical },
+const GROUPS = [
+  { key: "nbl", title: "Nonbetalaktam (NBL)", items: ["nblProduksi", "nblKemasan"] },
+  { key: "bl", title: "Betalaktam (BL)", items: ["blProduksi", "blKemasan"] },
+  { key: "sefaNonSteril", title: "Sefalosporin Non Steril", items: ["sefaNonSterilProduksi", "sefaNonSterilKemasan"] },
+  { key: "sefaSteril", title: "Sefalosporin Steril", items: ["sefaSterilProduksi", "sefaSterilKemasan"] },
+  { key: "gbb", title: "Gudang Bahan Baku (GBB)", items: ["gbbNbl", "gbbBl", "gbbSefa"] },
+  { key: "qc", title: "Laboratorium QC", singleKey: "qc", icon: FlaskConical },
+  { key: "rnd", title: "Research & Development (RND)", singleKey: "rnd", icon: Microscope },
+  { key: "pkrt", title: "PKRT", singleKey: "pkrt", icon: Sparkles },
+  { key: "alkes", title: "Alat Kesehatan (Alkes)", singleKey: "alkes", icon: Stethoscope },
+  { key: "gbj", title: "Gudang Barang Jadi (GBJ)", singleKey: "gbj", icon: Warehouse },
+  { key: "gbk", title: "Gudang Bahan Kemas (GBK)", singleKey: "gbk", icon: PackageCheck },
 ];
 
-const CLASS_ORDER = ["E", "D", "C", "B", "A"];
+const DENAH_MAP = {
+  nblProduksi: "/denah/nbl.png",
+  nblKemasan: "/denah/nbl.png",
+  gbbNbl: "/denah/nbl.png",
+
+  sefaNonSterilProduksi: "/denah/sefa.png",
+  sefaNonSterilKemasan: "/denah/sefa.png",
+  sefaSterilProduksi: "/denah/sefa.png",
+  sefaSterilKemasan: "/denah/sefa.png",
+  gbbSefa: "/denah/sefa.png",
+};
 
 const PARAM_DEFS = [
-  { key: "settle", label: "Cawan Papar (Settle Plate)", short: "Settle Plate" },
-  { key: "contact", label: "Cawan Kontak (Contact Plate)", short: "Contact Plate" },
-  { key: "air", label: "Air Sampler", short: "Air Sampler" },
+  { key: "suhu", label: "Suhu", unit: "°C", icon: Thermometer },
+  { key: "rh", label: "Kelembaban Relatif (RH)", unit: "%", icon: Droplets },
+  { key: "dpg", label: "Perbedaan Tekanan (DPG)", unit: "Pa", icon: Gauge },
 ];
 
-const LIMITS = [
-  { parameter: "settle", kelas: "E", syarat: 200, alert: 88, action: 119 },
-  { parameter: "settle", kelas: "D", syarat: 100, alert: 70, action: 95 },
-  { parameter: "contact", kelas: "D", syarat: 50, alert: 9, action: 13 },
-  { parameter: "air", kelas: "D", syarat: 200, alert: 138, action: 176 },
-  { parameter: "settle", kelas: "C", syarat: 50, alert: 13, action: 18 },
-  { parameter: "contact", kelas: "C", syarat: 25, alert: 14, action: 20 },
-  { parameter: "air", kelas: "C", syarat: 100, alert: 51, action: 68 },
-  { parameter: "settle", kelas: "B", syarat: 5, alert: 2, action: 3 },
-  { parameter: "contact", kelas: "B", syarat: 5, alert: 2, action: 3 },
-  { parameter: "air", kelas: "B", syarat: 10, alert: 5, action: 7 },
-  { parameter: "settle", kelas: "A", syarat: 1, alert: 1, action: 1, lessThan: true },
-  { parameter: "contact", kelas: "A", syarat: 1, alert: 1, action: 1, lessThan: true },
-  { parameter: "air", kelas: "A", syarat: 1, alert: 1, action: 1, lessThan: true },
-];
+const SESI = ["08:00", "13:00"];
 
 /* =========================================================================
-   3. QR VERIFIKASI DIGITAL (/verify)
+   3. UTILITY HELPER
    ========================================================================= */
-function buildVerifyUrl(params) {
-  const qs = new URLSearchParams(params).toString();
-  return `${window.location.origin}/verify?${qs}`;
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function VerifyQR({ type, facility, period, slot, size = 84 }) {
-  const params =
-    type === "report"
-      ? { type, facility, tanggal: period, slot }
-      : { type, facility, month: period, slot };
-  const url = buildVerifyUrl(params);
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <QRCodeSVG value={url} size={size} level="M" bgColor="#ffffff" fgColor="#0f172a" />
-      <span className="text-center text-[9px] leading-tight text-slate-400">Scan untuk verifikasi</span>
-    </div>
-  );
+function currentMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/* =========================================================================
-   4. HELPERS
-   ========================================================================= */
-function parseNumericValue(rawValue) {
-  if (rawValue === null || rawValue === undefined || rawValue === "") return null;
-  const str = String(rawValue).trim();
-  const lessThanMatch = str.match(/^<\s*([\d.]+)$/);
-  if (lessThanMatch) {
-    const n = Number(lessThanMatch[1]);
-    return Number.isNaN(n) ? null : n - 0.001;
-  }
-  const n = Number(str);
+function daysInMonth(monthStr) {
+  if (!monthStr) return 31;
+  const [y, m] = monthStr.split("-").map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
+function toNumberSafe(v) {
+  if (v === null || v === undefined || v === "" || v === "-") return null;
+  const clean = String(v).replace(/[≤≥]/g, "").replace(",", ".").trim();
+  const n = Number(clean);
   return Number.isNaN(n) ? null : n;
 }
 
-function getLimit(parameter, kelas) {
-  return LIMITS.find((l) => l.parameter === parameter && l.kelas === kelas) || null;
+function inRange(v, lower, upper) {
+  const lo = toNumberSafe(lower);
+  const hi = toNumberSafe(upper);
+  if (lo !== null && v < lo) return false;
+  if (hi !== null && v > hi) return false;
+  return true;
 }
 
-function getStatus(rawValue, parameter, kelas) {
-  const limit = getLimit(parameter, kelas);
-  if (!limit) return { level: 0, label: "N/A", color: "#64748b", bg: "#f1f5f9", dot: "#52525b" };
-  if (rawValue === null || rawValue === undefined || rawValue === "")
-    return { level: 0, label: "Belum diuji", color: "#64748b", bg: "#f1f5f9", dot: "#52525b" };
-  const v = parseNumericValue(rawValue);
-  if (v === null) return { level: 0, label: "N/A", color: "#64748b", bg: "#f1f5f9", dot: "#52525b" };
-  if (limit.lessThan) {
-    return v < 1
-      ? { level: 1, label: "Terkendali", color: "#15803d", bg: "#dcfce7", dot: "#22c55e" }
-      : { level: 4, label: "Melebihi Syarat", color: "#b91c1c", bg: "#fee2e2", dot: "#ef4444" };
+function liveLevelFor(rawValue, limit, paramKey) {
+  if (rawValue === "-") return 1;
+  const v = toNumberSafe(rawValue);
+  if (v === null) return 0;
+  if (!limit) return paramKey === "suhu" ? 1 : null;
+
+  const allNull = [
+    limit.syaratL,
+    limit.syaratU,
+    limit.alertL,
+    limit.alertU,
+    limit.actionL,
+    limit.actionU,
+  ].every((x) => toNumberSafe(x) === null);
+  if (allNull) return paramKey === "suhu" ? 1 : null;
+
+  if (inRange(v, limit.alertL, limit.alertU)) return 1;
+  if (inRange(v, limit.actionL, limit.actionU)) return 2;
+  if (inRange(v, limit.syaratL, limit.syaratU)) return 3;
+  return 4;
+}
+
+const LEVEL_STYLE = {
+  0: { label: "Belum diisi", color: "#64748b", bg: "#f1f5f9", dot: "#94a3b8" },
+  1: { label: "Terkendali", color: "#15803d", bg: "#dcfce7", dot: "#22c55e" },
+  2: { label: "Alert", color: "#b45309", bg: "#fef3c7", dot: "#f59e0b" },
+  3: { label: "Action", color: "#c2410c", bg: "#ffedd5", dot: "#f97316" },
+  4: { label: "Melebihi Syarat", color: "#b91c1c", bg: "#fee2e2", dot: "#ef4444" },
+};
+
+function levelStyle(level) {
+  if (level === null || level === undefined) {
+    return { label: "N/A", color: "#94a3b8", bg: "#f8fafc", dot: "#cbd5e1" };
   }
-  if (v < limit.alert) return { level: 1, label: "Terkendali", color: "#15803d", bg: "#dcfce7", dot: "#22c55e" };
-  if (v < limit.action) return { level: 2, label: "Alert", color: "#b45309", bg: "#fef3c7", dot: "#f59e0b" };
-  if (v < limit.syarat) return { level: 3, label: "Action", color: "#c2410c", bg: "#ffedd5", dot: "#f97316" };
-  return { level: 4, label: "Melebihi Syarat", color: "#b91c1c", bg: "#fee2e2", dot: "#ef4444" };
+  return LEVEL_STYLE[level] || LEVEL_STYLE[0];
 }
 
-function displayValue(rawValue, kelas, parameter) {
-  const limit = getLimit(parameter, kelas);
-  if (!limit) return "N/A";
-  if (rawValue === null || rawValue === undefined || rawValue === "") return "-";
-  const str = String(rawValue).trim();
-  if (/^<\s*[\d.]+$/.test(str)) return str.replace(/\s+/g, "");
-  if (limit.lessThan && Number(rawValue) < 1) return "<1";
-  return String(rawValue);
+function formatRange(lower, upper, unit, isDpg = false) {
+  const lo = toNumberSafe(lower);
+  const hi = toNumberSafe(upper);
+  if (lo === null && hi === null) return "—";
+  if (isDpg) {
+    const val = lo !== null ? lo : hi;
+    return `≥ ${String(val).replace(".", ",")} ${unit}`;
+  }
+  if (lo === null) return `≤ ${String(hi).replace(".", ",")} ${unit}`;
+  if (hi === null) return `≥ ${String(lo).replace(".", ",")} ${unit}`;
+  return `${String(lo).replace(".", ",")} – ${String(hi).replace(".", ",")} ${unit}`;
 }
 
 function facilityOverallLevel(entries) {
   let max = 0;
   (entries || []).forEach((e) => {
     PARAM_DEFS.forEach((p) => {
-      const s = getStatus(e[p.key], p.key, e.kelas);
-      if (s.level > max) max = s.level;
+      const lvl = e?.level?.[p.key];
+      if (lvl !== null && lvl !== undefined && lvl > max) max = lvl;
     });
   });
   return max;
 }
 
-const MONTHS_ID = [
-  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
-];
-
-function monthLabel(monthKey) {
-  if (!monthKey) return "";
-  const [y, m] = monthKey.split("-").map(Number);
-  return `${MONTHS_ID[m - 1]} ${y}`;
+/* =========================================================================
+   4. TANDA TANGAN DIGITAL QR (/verify)
+   ========================================================================= */
+function buildVerifyUrl(params) {
+  const qs = new URLSearchParams(params).toString();
+  const base =
+    typeof window !== "undefined" && window.location.origin
+      ? window.location.origin
+      : "https://emnv.myrama.id";
+  return `${base}/verify?${qs}`;
 }
 
-function prevMonthKey(monthKey) {
-  const [y, m] = monthKey.split("-").map(Number);
-  const d = new Date(y, m - 2, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
+function VerifyQR({ type, facility, period, roomName, jam, signerRole, signerName, size = 36, hideLabel = true }) {
+  const params = { type, facility };
+  if (type === "pengkajian") {
+    params.month = period;
+    if (roomName) params.roomName = roomName;
+    if (signerRole) params.role = signerRole;
+  } else if (type === "formulir") {
+    params.bulan = period;
+    params.roomName = roomName;
+    if (signerRole) params.role = signerRole;
+  } else {
+    params.type = "harian";
+    params.tanggal = period;
+    if (roomName) params.roomName = roomName;
+    if (jam) params.jam = jam;
+    if (signerRole) params.role = signerRole;
+  }
+  if (signerName) params.name = signerName;
 
-const LEVEL_LABEL = { 0: "N/A", 1: "Terkendali", 2: "Alert", 3: "Action", 4: "Melebihi Syarat" };
+  const url = buildVerifyUrl(params);
 
-function buildStatsSummary(classes, entries) {
-  const summary = {};
-  classes.forEach((k) => {
-    const kelasEntries = entries.filter((e) => e.kelas === k);
-    const breaches = [];
-    let maxLevel = 0;
-    const perParam = {};
-
-    PARAM_DEFS.forEach((p) => {
-      const limit = getLimit(p.key, k);
-      if (!limit) return;
-      const points = kelasEntries
-        .map((e) => ({ room: e.roomName, tanggal: e.tanggal, raw: e[p.key] }))
-        .filter((pt) => pt.raw !== null && pt.raw !== undefined && pt.raw !== "");
-      if (points.length === 0) return;
-
-      const numeric = points
-        .map((pt) => ({ ...pt, value: parseNumericValue(pt.raw) }))
-        .filter((pt) => pt.value !== null);
-      const allBelowOne = limit.lessThan && numeric.every((pt) => pt.value < 1);
-      const maxVal = numeric.length > 0 ? Math.max(...numeric.map((pt) => pt.value)) : null;
-      const topPoints =
-        maxVal === null
-          ? []
-          : numeric
-              .filter((pt) => pt.value === maxVal)
-              .slice(0, 3)
-              .map((pt) => ({ room: pt.room, tanggal: pt.tanggal, value: displayValue(pt.raw, k, p.key) }));
-
-      perParam[p.key] = {
-        label: p.short,
-        alertLimit: limit.alert,
-        actionLimit: limit.action,
-        syaratLimit: limit.syarat,
-        allBelowOne,
-        topValues: topPoints,
-      };
-    });
-
-    kelasEntries.forEach((e) => {
-      PARAM_DEFS.forEach((p) => {
-        const limit = getLimit(p.key, k);
-        if (!limit) return;
-        const s = getStatus(e[p.key], p.key, k);
-        if (s.level > maxLevel) maxLevel = s.level;
-        if (s.level >= 2) {
-          breaches.push({
-            room: e.roomName,
-            tanggal: e.tanggal,
-            parameter: p.short,
-            value: displayValue(e[p.key], k, p.key),
-            level: LEVEL_LABEL[s.level],
-          });
-        }
-      });
-    });
-    summary[k] = { totalTitik: kelasEntries.length, maxLevel: LEVEL_LABEL[maxLevel], perParam, breaches };
-  });
-  return summary;
-}
-
-function shortDate(iso) {
-  if (!iso) return "";
-  const [, m, d] = iso.split("-");
-  return `${d}/${m}`;
-}
-
-function fullDateID(iso) {
-  if (!iso) return "-";
-  const [y, m, d] = iso.split("-");
-  if (!y || !m || !d) return iso;
-  return `${d} ${MONTHS_ID[Number(m) - 1]} ${y}`;
-}
-
-function todayISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function uid() {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-function emptyNarrative() {
-  return {
-    pendahuluan:
-      "Environment Monitoring (EM) Viable merupakan bagian kritis dari sistem pengendalian mutu lingkungan pada fasilitas produksi farmasi. Program EM Viable bertujuan untuk memantau dan mengevaluasi tingkat cemaran mikrobiologi di area produksi guna memastikan kondisi lingkungan tetap berada dalam kondisi terkendali sesuai dengan ketentuan Standar CPOB tahun 2024 dan 2025 yang berlaku.",
-    perKelas: {},
-    kesimpulanUmum: "",
-    tindakLanjut: "",
-    kesanUmum: "",
-    observasiKritis: "",
-    rekomendasiAkhir: "",
-  };
-}
-
-function emptySignoff() {
-  return {
-    dinilai: { nama: "", jabatan: "QA Staff", tanggal: todayISO() },
-    diperiksa: { nama: "", jabatan: "QA Manager", tanggal: "" },
-  };
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      title="Verifikasi Tanda Tangan Digital"
+      className="inline-flex flex-col items-center gap-0.5 hover:opacity-80 transition transform hover:scale-105"
+    >
+      <QRCodeSVG
+        value={url}
+        size={size}
+        level="L"
+        includeMargin={true}
+        bgColor="#ffffff"
+        fgColor="#0f172a"
+      />
+      {!hideLabel && <span className="text-[9px] text-slate-400">Scan</span>}
+    </a>
+  );
 }
 
 /* =========================================================================
-   5. SIDEBAR COMPONENT (DENGAN KELAS no-print)
+   5. KOMPONEN GRAFIK RECHARTS
    ========================================================================= */
-function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status = {}, isOpen, onClose, hasAccess, notifications = [] }) {
-  const [expandedGroups, setExpandedGroups] = useState({ sefa: true });
+function ChartDot({ cx, cy, payload }) {
+  if (cx == null || cy == null) return null;
+  const style = levelStyle(payload?.level);
+  return <circle cx={cx} cy={cy} r={3.5} fill={style.color} stroke="#fff" strokeWidth={1.5} />;
+}
+
+function ChartTooltip({ active, payload, unit }) {
+  if (!active || !payload || !payload.length) return null;
+  const p = payload[0].payload;
+  const style = levelStyle(p?.level);
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white/95 backdrop-blur-md px-3 py-1.5 text-xs shadow-xl space-y-0.5">
+      <p className="font-semibold text-slate-800">{p.label}</p>
+      <p className="text-sm font-extrabold" style={{ color: style.color }}>
+        {p.value} {unit}
+      </p>
+      <p className="font-medium text-[10.5px]" style={{ color: style.color }}>
+        {style.label}
+      </p>
+    </div>
+  );
+}
+
+function LegendChip({ color, label }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[9.5px] font-medium text-slate-600 border border-slate-200">
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
+      {label}
+    </span>
+  );
+}
+
+function DayParamChart({ activeRoomNames = [], rooms = [], currentDayEntries = [], paramKey, paramLabel, unit }) {
+  const data = useMemo(() => {
+    return (activeRoomNames || [])
+      .map((name) => {
+        const rObj = (rooms || []).find((r) => r?.name === name);
+        const rowAm = (currentDayEntries || []).find((e) => e?.roomName === name && e?.jam === "08:00");
+        const rowPm = (currentDayEntries || []).find((e) => e?.roomName === name && e?.jam === "13:00");
+        const vAm = toNumberSafe(rowAm?.[paramKey]);
+        const vPm = toNumberSafe(rowPm?.[paramKey]);
+        const lim = rObj?.limits?.[paramKey];
+
+        const points = [];
+        if (vAm !== null) {
+          points.push({
+            label: `${name} (08:00)`,
+            roomName: name,
+            jam: "08:00",
+            value: vAm,
+            level: liveLevelFor(vAm, lim, paramKey),
+            lim,
+          });
+        }
+        if (vPm !== null) {
+          points.push({
+            label: `${name} (13:00)`,
+            roomName: name,
+            jam: "13:00",
+            value: vPm,
+            level: liveLevelFor(vPm, lim, paramKey),
+            lim,
+          });
+        }
+        return points;
+      })
+      .flat();
+  }, [activeRoomNames, rooms, currentDayEntries, paramKey]);
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="p-4 bg-slate-50/80 rounded-2xl border border-dashed border-slate-200 text-center text-xs text-slate-400">
+        Belum ada data pengukuran {paramLabel} yang tersimpan pada tanggal ini.
+      </div>
+    );
+  }
+
+  const peak = data.reduce((a, b) => (b.level > a.level ? b : a), data[0]);
+  const refLim = peak?.lim || rooms[0]?.limits?.[paramKey] || {};
+  const isDpg = paramKey === "dpg";
+
+  const alertVal = toNumberSafe(refLim.alertU ?? refLim.alertL);
+  const actionVal = toNumberSafe(refLim.actionU ?? refLim.actionL);
+  const syaratVal = toNumberSafe(refLim.syaratU ?? refLim.syaratL);
+
+  const allVals = data
+    .map((d) => d.value)
+    .concat([alertVal, actionVal, syaratVal])
+    .filter((v) => v !== null && !isNaN(v));
+  const minVal = Math.min(...allVals, 0);
+  const maxVal = Math.max(...allVals, 10);
+  const yMin = minVal < 0 ? Math.round((minVal - (maxVal - minVal) * 0.1) * 10) / 10 : 0;
+  const yMax = Math.round((maxVal + (maxVal - minVal) * 0.1) * 10) / 10;
+  const gradId = `dayGrad-${paramKey}`;
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-xs print-card avoid-break w-full">
+      <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-slate-100 px-3.5 py-2 bg-slate-50/60">
+        <div>
+          <p className="text-xs font-bold text-slate-800">{paramLabel}</p>
+          <p className="text-[9.5px] text-slate-500 mt-0.5">
+            Nilai Tertinggi: <span className="font-semibold text-slate-800">{peak.value} {unit}</span> ({peak.roomName})
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <LegendChip color="#15803d" label="Terkendali" />
+          {alertVal !== null && <LegendChip color="#b45309" label={`Alert ${isDpg ? "≥ " : ""}${alertVal}`} />}
+          {actionVal !== null && <LegendChip color="#c2410c" label={`Action ${isDpg ? "≥ " : ""}${actionVal}`} />}
+          {syaratVal !== null && <LegendChip color="#b91c1c" label={`Syarat ${isDpg ? "≥ " : ""}${syaratVal}`} />}
+        </div>
+      </div>
+      <div className="p-2.5 chart-container-print">
+        <ResponsiveContainer width="100%" height={165}>
+          <ComposedChart data={data} margin={{ top: 8, right: 10, left: 4, bottom: 20 }}>
+            <defs>
+              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#16a34a" stopOpacity={0.25} />
+                <stop offset="100%" stopColor="#16a34a" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+            {alertVal !== null && <ReferenceLine y={alertVal} stroke="#f59e0b" strokeWidth={1.2} strokeDasharray="4 3" />}
+            {actionVal !== null && <ReferenceLine y={actionVal} stroke="#ea580c" strokeWidth={1.2} strokeDasharray="4 3" />}
+            {syaratVal !== null && <ReferenceLine y={syaratVal} stroke="#dc2626" strokeWidth={1.5} strokeDasharray="4 3" />}
+            <XAxis dataKey="label" tick={{ fontSize: 8.5, fill: "#64748b" }} angle={-25} textAnchor="end" interval={0} height={30} />
+            <YAxis domain={[yMin, yMax]} tick={{ fontSize: 8.5, fill: "#64748b" }} width={36} tickFormatter={(v) => { const n = Math.round(v * 10) / 10; return Number.isInteger(n) ? n : n.toFixed(1); }} />
+            <Tooltip content={<ChartTooltip unit={unit} />} />
+            <Area type="monotone" dataKey="value" stroke="none" fill={`url(#${gradId})`} isAnimationActive={false} />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke="#16a34a"
+              strokeWidth={2}
+              dot={<ChartDot />}
+              activeDot={{ r: 4.5, stroke: "#fff", strokeWidth: 2 }}
+              isAnimationActive={false}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function RoomMonthlyTrendChart({ entriesData = [], paramKey, paramLabel, unit, limit, isGlobal = false }) {
+  const data = useMemo(() => {
+    return (entriesData || [])
+      .map((e) => {
+        const v = toNumberSafe(e?.[paramKey]);
+        if (v === null) return null;
+        return {
+          label: isGlobal
+            ? `${String(e?.tanggal || "").slice(-2)} (${e?.roomName || ""})`
+            : `${String(e?.tanggal || "").slice(-2)}/${e?.jam || ""}`,
+          value: v,
+          level: e?.level?.[paramKey] ?? 0,
+          roomName: e?.roomName || "",
+        };
+      })
+      .filter(Boolean);
+  }, [entriesData, paramKey, isGlobal]);
+
+  if (!data || data.length === 0) return null;
+
+  const peak = data.reduce((a, b) => (b.level > a.level ? b : a), data[0]);
+  const isDpg = paramKey === "dpg";
+
+  const alertVal = toNumberSafe(limit?.alertU ?? limit?.alertL);
+  const actionVal = toNumberSafe(limit?.actionU ?? limit?.actionL);
+  const syaratVal = toNumberSafe(limit?.syaratU ?? limit?.syaratL);
+
+  const allVals = data
+    .map((d) => d.value)
+    .concat([alertVal, actionVal, syaratVal])
+    .filter((v) => v !== null && !isNaN(v));
+  const minVal = Math.min(...allVals, 0);
+  const maxVal = Math.max(...allVals, 10);
+  const yMin = minVal < 0 ? Math.round((minVal - (maxVal - minVal) * 0.1) * 10) / 10 : 0;
+  const yMax = Math.round((maxVal + (maxVal - minVal) * 0.1) * 10) / 10;
+  const gradId = `monthGrad-${paramKey}-${isGlobal ? "global" : "room"}`;
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs print-card avoid-break w-full">
+      <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-slate-100 px-3.5 py-2 bg-slate-50/60">
+        <div>
+          <p className="text-xs font-bold text-slate-800">
+            {paramLabel} — {isGlobal ? "Tren Global Fasilitas" : "Tren 1 Bulan"}
+          </p>
+          <p className="text-[9.5px] text-slate-500 mt-0.5">
+            Nilai Tertinggi: <span className="font-semibold text-slate-800">{peak.value} {unit}</span> ({peak.roomName})
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <LegendChip color="#15803d" label="Terkendali" />
+          {alertVal !== null && <LegendChip color="#b45309" label={`Alert ${isDpg ? "≥ " : ""}${alertVal}`} />}
+          {actionVal !== null && <LegendChip color="#c2410c" label={`Action ${isDpg ? "≥ " : ""}${actionVal}`} />}
+          {syaratVal !== null && <LegendChip color="#b91c1c" label={`Syarat ${isDpg ? "≥ " : ""}${syaratVal}`} />}
+        </div>
+      </div>
+      <div className="p-2.5 chart-container-print">
+        <ResponsiveContainer width="100%" height={155}>
+          <ComposedChart data={data} margin={{ top: 8, right: 10, left: 4, bottom: 20 }}>
+            <defs>
+              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#16a34a" stopOpacity={0.25} />
+                <stop offset="100%" stopColor="#16a34a" stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+            {alertVal !== null && <ReferenceLine y={alertVal} stroke="#f59e0b" strokeWidth={1.2} strokeDasharray="4 3" />}
+            {actionVal !== null && <ReferenceLine y={actionVal} stroke="#ea580c" strokeWidth={1.2} strokeDasharray="4 3" />}
+            {syaratVal !== null && <ReferenceLine y={syaratVal} stroke="#dc2626" strokeWidth={1.5} strokeDasharray="4 3" />}
+            <XAxis dataKey="label" tick={{ fontSize: 8, fill: "#64748b" }} angle={-25} textAnchor="end" interval="preserveStartEnd" height={30} />
+            <YAxis domain={[yMin, yMax]} tick={{ fontSize: 8.5, fill: "#64748b" }} width={36} tickFormatter={(v) => { const n = Math.round(v * 10) / 10; return Number.isInteger(n) ? n : n.toFixed(1); }} />
+            <Tooltip content={<ChartTooltip unit={unit} />} />
+            <Area type="monotone" dataKey="value" stroke="none" fill={`url(#${gradId})`} isAnimationActive={false} />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke="#16a34a"
+              strokeWidth={2}
+              dot={<ChartDot />}
+              activeDot={{ r: 4.5, stroke: "#fff", strokeWidth: 2 }}
+              isAnimationActive={false}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   6. SIDEBAR COMPONENT (HITAM PEKAT & NO-PRINT)
+   ========================================================================= */
+function Sidebar({ session, view, setView, status = {}, onNeedLogin, isOpen, onClose, notifications = [] }) {
+  const [expandedGroups, setExpandedGroups] = useState({ nbl: true, gbb: true });
 
   const toggleGroup = (k) => {
     setExpandedGroups((prev) => ({ ...prev, [k]: !prev[k] }));
   };
 
-  const navigateToDashboard = () => {
-    setView("dashboard");
-    if (typeof window !== "undefined" && window.innerWidth < 1024) onClose?.();
+  const navigateTo = (newView) => {
+    if (newView.page === "facility" && !session) {
+      onNeedLogin();
+      return;
+    }
+    setView(newView);
+    if (window.innerWidth < 1024) onClose();
   };
 
-  const navigateToNotifications = () => {
-    setView("notifications");
-    if (typeof window !== "undefined" && window.innerWidth < 1024) onClose?.();
-  };
-
-  const navigateToActivity = () => {
-    setView("activity");
-    if (typeof window !== "undefined" && window.innerWidth < 1024) onClose?.();
-  };
-
-  const navigateToFacility = (key) => {
-    setFacilityKey(key);
-    setView("detail");
-    if (typeof window !== "undefined" && window.innerWidth < 1024) onClose?.();
-  };
-
-  const getDotColor = (key) => {
-    const st = status?.[key];
-    if (!st?.hasData) return "#475569";
-    const lvl = st?.level || 0;
-    if (lvl >= 4) return "#ef4444";
-    if (lvl === 3) return "#f97316";
-    if (lvl === 2) return "#f59e0b";
-    return "#22c55e";
-  };
-
-  const criticalCount = (notifications || []).filter((n) => n.type === "critical").length;
+  const criticalCount = notifications.filter((n) => n.type === "critical").length;
 
   return (
     <>
       {isOpen && (
         <div
           onClick={onClose}
-          className="no-print fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs lg:hidden transition-opacity duration-300"
+          className="no-print fixed inset-0 z-40 bg-black/70 backdrop-blur-xs lg:hidden transition-opacity duration-300"
         />
       )}
 
-      {/* no-print ditambahkan langsung pada elemen aside */}
+      {/* Background Hitam Pekat (bg-black) & no-print */}
       <aside
-        className={`no-print fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-slate-300 border-r border-slate-800 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+        className={`no-print fixed inset-y-0 left-0 z-50 w-72 bg-black text-zinc-300 border-r border-zinc-800/80 flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="h-16 flex items-center justify-between px-5 border-b border-slate-800 bg-slate-950/70">
-          <button onClick={navigateToDashboard} className="flex items-center gap-3 text-left focus:outline-none">
+        <div className="h-16 flex items-center justify-between px-5 border-b border-zinc-800/80 bg-zinc-950">
+          <button onClick={() => navigateTo({ page: "dashboard" })} className="flex items-center gap-3 text-left">
             <img src="/logo-rama.png" alt="Logo" className="h-9 w-9 object-contain brightness-0 invert" />
             <div className="min-w-0">
-              <p className="text-xs font-bold text-white tracking-tight leading-tight truncate">EM Viable (Mikro)</p>
-              <p className="text-[10px] font-medium text-blue-400 truncate">PT. Rama Emerald Multi Sukses</p>
+              <p className="text-xs font-bold text-white tracking-tight leading-tight truncate">EM Non Viable</p>
+              <p className="text-[10px] font-medium text-rose-400 truncate">PT. Rama Emerald Multi Sukses</p>
             </div>
           </button>
-          <button onClick={onClose} className="text-slate-400 hover:text-white lg:hidden p-1 rounded-lg">
+          <button onClick={onClose} className="text-zinc-400 hover:text-white lg:hidden p-1">
             <X size={18} />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6 scrollbar-thin">
-          {/* Group 1: Menu Utama */}
           <div className="space-y-1">
-            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Menu Utama</p>
+            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Menu Utama</p>
             <button
-              onClick={navigateToDashboard}
+              onClick={() => navigateTo({ page: "dashboard" })}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
-                view === "dashboard"
-                  ? "bg-blue-700 text-white shadow-lg shadow-blue-900/50"
-                  : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
+                view.page === "dashboard"
+                  ? "bg-rose-900 text-white shadow-lg shadow-rose-950/50"
+                  : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
               }`}
             >
               <LayoutDashboard size={16} />
@@ -473,11 +649,11 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
 
             {session && (
               <button
-                onClick={navigateToNotifications}
+                onClick={() => navigateTo({ page: "notifications" })}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
-                  view === "notifications"
-                    ? "bg-blue-700 text-white shadow-lg shadow-blue-900/50"
-                    : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
+                  view.page === "notifications"
+                    ? "bg-rose-900 text-white shadow-lg shadow-rose-950/50"
+                    : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -496,13 +672,26 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
               </button>
             )}
 
+            {session && hasAccess(session, "Supervisor", "QA") && (
+              <button
+                onClick={() => navigateTo({ page: "pengkajian", facility: view.facility || "nblProduksi", room: "" })}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+                  view.page === "pengkajian" && !view.room
+                    ? "bg-rose-900 text-white shadow-lg shadow-rose-950/50"
+                    : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                }`}
+              >
+                <ClipboardList size={16} />
+                <span>Pengkajian QA Global</span>
+              </button>
+            )}
             {session && hasAccess(session, "Supervisor") && (
               <button
-                onClick={navigateToActivity}
+                onClick={() => navigateTo({ page: "activity" })}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
-                  view === "activity"
-                    ? "bg-blue-700 text-white shadow-lg shadow-blue-900/50"
-                    : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
+                  view.page === "activity"
+                    ? "bg-rose-900 text-white shadow-lg shadow-rose-950/50"
+                    : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
                 }`}
               >
                 <History size={16} />
@@ -511,28 +700,28 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
             )}
           </div>
 
-          {/* Group 2: Fasilitas Sampling */}
           <div className="space-y-1">
-            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Fasilitas Sampling</p>
-            {VIABLE_GROUPS.map((g) => {
+            <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-2">Area &amp; Fasilitas</p>
+            {GROUPS.map((g) => {
               if (g.singleKey) {
                 const fac = FACILITIES.find((f) => f.key === g.singleKey);
-                const active = view === "detail" && facilityKey === g.singleKey;
-                const dotColor = getDotColor(g.singleKey);
+                const st = status?.[g.singleKey];
+                const active = view.page === "facility" && view.facility === g.singleKey;
+                const dotColor = st?.hasData ? levelStyle(st.level).dot : "#52525b";
                 const SingleIcon = g.icon || Building2;
 
                 return (
                   <button
                     key={g.key}
-                    onClick={() => navigateToFacility(g.singleKey)}
+                    onClick={() => navigateTo({ page: "facility", facility: g.singleKey })}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition ${
                       active
-                        ? "bg-blue-700/80 text-white border border-blue-500/50 font-semibold"
-                        : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
+                        ? "bg-rose-900/70 text-white border border-rose-700/50"
+                        : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
                     }`}
                   >
                     <div className="flex items-center gap-2.5 truncate">
-                      <SingleIcon size={14} className="text-slate-400 shrink-0" />
+                      <SingleIcon size={14} className="text-zinc-400 shrink-0" />
                       <span className="truncate">{fac?.label || g.title}</span>
                     </div>
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ background: dotColor }} />
@@ -541,7 +730,7 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
               }
 
               const isOpenGroup = !!expandedGroups[g.key];
-              const isGroupActive = view === "detail" && g.items.includes(facilityKey);
+              const isGroupActive = view.page === "facility" && g.items.includes(view.facility);
               const GroupIcon = Building2;
 
               return (
@@ -549,37 +738,38 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
                   <button
                     onClick={() => toggleGroup(g.key)}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                      isGroupActive ? "text-blue-300" : "text-slate-300 hover:bg-slate-800/70"
+                      isGroupActive ? "text-rose-300" : "text-zinc-300 hover:bg-zinc-900"
                     }`}
                   >
                     <div className="flex items-center gap-2.5 truncate">
-                      <GroupIcon size={14} className="text-slate-400 shrink-0" />
+                      <GroupIcon size={14} className="text-zinc-400 shrink-0" />
                       <span className="truncate">{g.title}</span>
                     </div>
                     <ChevronDown
                       size={14}
-                      className={`text-slate-500 transition-transform duration-200 ${isOpenGroup ? "rotate-180" : ""}`}
+                      className={`text-zinc-500 transition-transform duration-200 ${isOpenGroup ? "rotate-180" : ""}`}
                     />
                   </button>
 
                   {isOpenGroup && (
-                    <div className="pl-4 pr-1 py-1 space-y-0.5 border-l border-slate-800 ml-4">
+                    <div className="pl-4 pr-1 py-1 space-y-0.5 border-l border-zinc-800 ml-4">
                       {g.items.map((facKey) => {
                         const fac = FACILITIES.find((f) => f.key === facKey);
-                        const active = view === "detail" && facilityKey === facKey;
-                        const dotColor = getDotColor(facKey);
+                        const st = status?.[facKey];
+                        const active = view.page === "facility" && view.facility === facKey;
+                        const dotColor = st?.hasData ? levelStyle(st.level).dot : "#52525b";
 
                         return (
                           <button
                             key={facKey}
-                            onClick={() => navigateToFacility(facKey)}
+                            onClick={() => navigateTo({ page: "facility", facility: facKey })}
                             className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] transition ${
                               active
-                                ? "bg-blue-700 text-white font-semibold"
-                                : "text-slate-400 hover:bg-slate-800/70 hover:text-slate-200"
+                                ? "bg-rose-900 text-white font-semibold"
+                                : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
                             }`}
                           >
-                            <span className="truncate">{fac?.label || facKey}</span>
+                            <span className="truncate">{fac?.label}</span>
                             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dotColor }} />
                           </button>
                         );
@@ -592,8 +782,8 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
           </div>
         </div>
 
-        <div className="px-4 py-3 border-t border-slate-800 bg-slate-950/80 text-[10px] text-slate-400 flex justify-between items-center select-none">
-          <span className="font-mono text-slate-400">QA.FM.156 / POS.QC.036</span>
+        <div className="px-4 py-3 border-t border-zinc-800 bg-zinc-950 text-[10px] text-zinc-400 flex justify-between items-center select-none">
+          <span className="font-mono text-zinc-400">SOP POS.QA.025</span>
           <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             Online Sync
@@ -605,11 +795,170 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
 }
 
 /* =========================================================================
-   6. HEADER BAR
+   7. DASHBOARD OVERVIEW COMPONENT
    ========================================================================= */
-function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, setMonthKey, onToggleSidebar, notifications = [], onSelectNotification }) {
+function DashboardOverview({ month, status = {}, setView, session, onNeedLogin }) {
+  const perluCount = FACILITIES.filter((f) => (status?.[f.key]?.level || 0) === 3).length;
+  const tmsCount = FACILITIES.filter((f) => (status?.[f.key]?.level || 0) >= 4).length;
+  const terkendaliCount = FACILITIES.filter((f) => status?.[f.key]?.hasData && (status?.[f.key]?.level || 0) < 3).length;
+  const belumAdaCount = FACILITIES.filter((f) => !status?.[f.key]?.hasData).length;
+
+  function handleOpenFacility(facKey) {
+    if (!session) {
+      onNeedLogin();
+      return;
+    }
+    setView({ page: "facility", facility: facKey });
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-black via-zinc-950 to-rose-950 p-6 sm:p-8 text-white shadow-xl transition-all duration-300 hover:shadow-2xl">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-rose-600/20 blur-3xl animate-pulse" />
+        <div className="relative space-y-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-500/20 border border-rose-500/30 px-3 py-0.5 text-[11px] font-semibold text-rose-200">
+            <ShieldCheck size={13} /> Sistem Pemantauan CPOB Non Viable
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Status Fasilitas EM Non Viable</h1>
+          <p className="text-xs sm:text-sm text-rose-100/80 max-w-2xl leading-relaxed">
+            Pemantauan berkala parameter Suhu, Kelembaban Relatif (RH), dan Perbedaan Tekanan Ruang (DPG) seluruh gedung
+            produksi periode <b>{monthLabelID(month)}</b>.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs transition-all duration-300 ease-out hover:-translate-y-1.5 hover:scale-105 hover:shadow-lg hover:border-slate-300 cursor-default select-none">
+          <p className="text-xs font-semibold text-slate-400">Total Fasilitas</p>
+          <p className="text-2xl font-bold text-slate-800 mt-1">{FACILITIES.length}</p>
+        </div>
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 shadow-xs transition-all duration-300 ease-out hover:-translate-y-1.5 hover:scale-105 hover:shadow-lg hover:shadow-emerald-500/10 hover:border-emerald-300 cursor-default select-none">
+          <p className="text-xs font-semibold text-emerald-700">Terkendali</p>
+          <p className="text-2xl font-bold text-emerald-800 mt-1">{terkendaliCount}</p>
+        </div>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 shadow-xs transition-all duration-300 ease-out hover:-translate-y-1.5 hover:scale-105 hover:shadow-lg hover:shadow-amber-500/10 hover:border-amber-300 cursor-default select-none">
+          <p className="text-xs font-semibold text-amber-700">Perlu Perhatian</p>
+          <p className="text-2xl font-bold text-amber-800 mt-1">{perluCount}</p>
+        </div>
+        <div className="rounded-2xl border border-red-200 bg-red-50/50 p-4 shadow-xs transition-all duration-300 ease-out hover:-translate-y-1.5 hover:scale-105 hover:shadow-lg hover:shadow-red-500/10 hover:border-red-300 cursor-default select-none">
+          <p className="text-xs font-semibold text-red-700">Melebihi Syarat</p>
+          <p className="text-2xl font-bold text-red-800 mt-1">{tmsCount}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-xs transition-all duration-300 ease-out hover:-translate-y-1.5 hover:scale-105 hover:shadow-lg hover:border-slate-300 cursor-default select-none">
+          <p className="text-xs font-semibold text-slate-400">Belum Ada Data</p>
+          <p className="text-2xl font-bold text-slate-700 mt-1">{belumAdaCount}</p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            Matriks 17 Fasilitas — {monthLabelID(month)}
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {GROUPS.map((g) => {
+            if (g.singleKey) {
+              const fac = FACILITIES.find((f) => f.key === g.singleKey);
+              const st = status?.[g.singleKey];
+              const lvl = levelStyle(st?.hasData ? st.level : null);
+              const SingleIcon = g.icon || Building2;
+
+              return (
+                <div
+                  key={g.key}
+                  onClick={() => handleOpenFacility(g.singleKey)}
+                  className="cursor-pointer rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.02] hover:border-rose-400 hover:shadow-xl hover:shadow-rose-950/5 group"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center transition-all duration-300 group-hover:scale-110 group-hover:bg-rose-50 group-hover:text-rose-900 shadow-2xs">
+                        <SingleIcon size={20} />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800 transition-colors group-hover:text-rose-900">{fac?.label || g.title}</h3>
+                        <p className="text-xs text-slate-400">Departemen {fac?.department}</p>
+                      </div>
+                    </div>
+                    <span
+                      className="text-xs px-2.5 py-1 rounded-full font-semibold shrink-0 transition-transform duration-300 group-hover:scale-105"
+                      style={{ background: lvl.bg, color: lvl.color }}
+                    >
+                      {st?.hasData ? lvl.label : "Belum Ada Data"}
+                    </span>
+                  </div>
+                </div>
+              );
+            }
+
+            const GroupIcon = g.key === "gbb" ? Boxes : Building2;
+
+            return (
+              <div key={g.key} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-all duration-300 hover:shadow-md hover:border-slate-300 space-y-3">
+                <div className="flex items-center justify-between border-b pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <GroupIcon size={16} className="text-rose-800" />
+                    <h3 className="text-sm font-bold text-slate-800">{g.title}</h3>
+                  </div>
+                  <span className="text-[11px] text-slate-400 font-medium">{g.items.length} Sub-Area</span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2">
+                  {g.items.map((facKey) => {
+                    const fac = FACILITIES.find((f) => f.key === facKey);
+                    const st = status?.[facKey];
+                    const lvl = levelStyle(st?.hasData ? st.level : null);
+
+                    return (
+                      <button
+                        key={facKey}
+                        onClick={() => handleOpenFacility(facKey)}
+                        className="w-full flex items-center justify-between p-2.5 rounded-xl border border-slate-100 transition-all duration-300 ease-out hover:-translate-y-0.5 hover:scale-[1.015] hover:border-rose-300 hover:bg-rose-50/50 hover:shadow-sm text-left group/btn"
+                      >
+                        <div>
+                          <p className="text-xs font-bold text-slate-800 transition-colors group-hover/btn:text-rose-900">{fac?.label}</p>
+                          <p className="text-[10px] text-slate-400">Dept: {fac?.department}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="text-[11px] px-2 py-0.5 rounded-full font-medium transition-transform duration-200 group-hover/btn:scale-105"
+                            style={{ background: lvl.bg, color: lvl.color }}
+                          >
+                            {st?.hasData ? lvl.label : "Belum Ada Data"}
+                          </span>
+                          <ChevronRight size={14} className="text-slate-300 transition-transform duration-200 group-hover/btn:translate-x-1 group-hover/btn:text-rose-800" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   8. HEADER BAR DENGAN PUSAT NOTIFIKASI REAL-TIME
+   ========================================================================= */
+function HeaderBar({
+  session,
+  onLoginClick,
+  onLogout,
+  onProfileClick,
+  month,
+  setMonth,
+  onToggleSidebar,
+  notifications = [],
+  onSelectNotification,
+}) {
   const [showNotifPopover, setShowNotifPopover] = useState(false);
   const avatarLetter = (session?.nama || session?.username || "U").charAt(0).toUpperCase();
+
   const criticalCount = notifications.filter((n) => n.type === "critical").length;
 
   return (
@@ -621,17 +970,17 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
           </button>
           <div className="hidden sm:block">
             <p className="text-xs font-bold text-slate-800">PT. Rama Emerald Multi Sukses</p>
-            <p className="text-[10px] text-slate-400">QA Mikrobiologi EM Viable</p>
+            <p className="text-[10px] text-slate-400">Quality Assurance Department</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2.5">
           <label className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 shadow-2xs">
-            <Calendar size={13} className="text-blue-700" />
+            <Calendar size={13} className="text-rose-800" />
             <input
               type="month"
-              value={monthKey}
-              onChange={(e) => setMonthKey(e.target.value)}
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
               className="bg-transparent border-none outline-none font-semibold text-xs text-slate-800 [color-scheme:light]"
             />
           </label>
@@ -658,14 +1007,17 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
 
               {showNotifPopover && (
                 <>
-                  <div onClick={() => setShowNotifPopover(false)} className="fixed inset-0 z-40 bg-transparent" />
+                  <div
+                    onClick={() => setShowNotifPopover(false)}
+                    className="fixed inset-0 z-40 bg-transparent"
+                  />
                   <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-3xl bg-white shadow-2xl border border-slate-200 z-50 overflow-hidden animate-fade-in">
                     <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-100">
                       <div className="flex items-center gap-2">
-                        <Bell size={14} className="text-blue-700" />
+                        <Bell size={14} className="text-rose-800" />
                         <h4 className="text-xs font-bold text-slate-800">Pusat Notifikasi &amp; Alert</h4>
                       </div>
-                      <span className="text-[10px] font-semibold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] font-semibold bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full">
                         {notifications.length} Item
                       </span>
                     </div>
@@ -682,7 +1034,7 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
                           <div
                             key={idx}
                             onClick={() => {
-                              onSelectNotification?.(item);
+                              onSelectNotification(item);
                               setShowNotifPopover(false);
                             }}
                             className={`p-3 transition cursor-pointer hover:bg-slate-50 flex items-start gap-2.5 ${
@@ -712,6 +1064,19 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
                                 <span className="text-[9px] font-semibold text-slate-700 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">
                                   {item.facilityLabel}
                                 </span>
+                                {item.tag && (
+                                  <span
+                                    className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
+                                      item.type === "critical"
+                                        ? "bg-red-100 text-red-700"
+                                        : item.type === "qa_global"
+                                        ? "bg-blue-100 text-blue-800"
+                                        : "bg-amber-100 text-amber-800"
+                                    }`}
+                                  >
+                                    {item.tag}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -730,7 +1095,7 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
                 onClick={onProfileClick}
                 className="flex items-center gap-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 px-3 py-1.5 text-xs font-semibold text-slate-700 transition"
               >
-                <div className="w-6 h-6 rounded-lg bg-blue-700 text-white flex items-center justify-center text-[10px] font-bold">
+                <div className="w-6 h-6 rounded-lg bg-rose-900 text-white flex items-center justify-center text-[10px] font-bold">
                   {avatarLetter}
                 </div>
                 <div className="hidden sm:block text-left leading-tight">
@@ -740,7 +1105,7 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
               </button>
               <button
                 onClick={onLogout}
-                className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-blue-50 hover:text-blue-700 transition"
+                className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-rose-50 hover:text-rose-700 transition"
                 title="Keluar"
               >
                 <LogOut size={16} />
@@ -749,7 +1114,7 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
           ) : (
             <button
               onClick={onLoginClick}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-900 hover:bg-rose-950 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition"
             >
               <LogIn size={14} /> Masuk
             </button>
@@ -761,1263 +1126,283 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
 }
 
 /* =========================================================================
-   7. DASHBOARD OVERVIEW
+   9. HALAMAN DETAIL PUSAT NOTIFIKASI DI SIDEBAR
    ========================================================================= */
-function StatusPill({ level, hasData }) {
-  if (!hasData) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-slate-100 text-slate-500">
-        Belum ada data
-      </span>
-    );
-  }
-  if (level >= 4) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "#fee2e2", color: "#b91c1c" }}>
-        <AlertTriangle size={13} /> Melebihi Syarat
-      </span>
-    );
-  }
-  if (level === 3) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "#ffedd5", color: "#c2410c" }}>
-        <AlertTriangle size={13} /> Terkendali (Action Limit)
-      </span>
-    );
-  }
+function NotificationsPage({ notifications = [], onSelectNotification, setView }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "#dcfce7", color: "#15803d" }}>
-      <CheckCircle2 size={13} /> Terkendali
-    </span>
-  );
-}
-
-function Cell({ value, kelas, parameter }) {
-  const limit = getLimit(parameter, kelas);
-  if (!limit) return <td className="px-3 py-2 text-center text-slate-300 text-sm">N/A</td>;
-  const status = getStatus(value, parameter, kelas);
-  return (
-    <td className="px-3 py-2 text-center">
-      <span
-        className="inline-block min-w-[2.5rem] rounded px-2 py-0.5 text-sm font-medium"
-        style={{ background: status.bg, color: status.color }}
-        title={status.label}
-      >
-        {displayValue(value, kelas, parameter)}
-      </span>
-    </td>
-  );
-}
-
-function LegendRow() {
-  const items = [
-    { label: "Terkendali (< 1 CFU)", bg: "#dcfce7", color: "#15803d" },
-    { label: "Alert", bg: "#fef3c7", color: "#b45309" },
-    { label: "Action", bg: "#ffedd5", color: "#c2410c" },
-    { label: "Melebihi Syarat", bg: "#fee2e2", color: "#b91c1c" },
-    { label: "N/A / Belum diuji", bg: "#f1f5f9", color: "#64748b" },
-  ];
-  return (
-    <div className="flex flex-wrap gap-3 text-xs">
-      {items.map((it) => (
-        <span key={it.label} className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm" style={{ background: it.bg, border: `1px solid ${it.color}` }} />
-          <span className="text-slate-600">{it.label}</span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function statusForChartValue(value, limit) {
-  if (limit.lessThan) {
-    return value < 1
-      ? { label: "Terkendali", color: "#15803d" }
-      : { label: "Melebihi Syarat", color: "#b91c1c" };
-  }
-  if (value < limit.alert) return { label: "Terkendali", color: "#15803d" };
-  if (value < limit.action) return { label: "Alert", color: "#b45309" };
-  if (value < limit.syarat) return { label: "Action", color: "#c2410c" };
-  return { label: "Melebihi Syarat", color: "#b91c1c" };
-}
-
-function ChartDot({ cx, cy, payload, limit }) {
-  if (cx == null || cy == null) return null;
-  const s = statusForChartValue(payload.value, limit);
-  return <circle cx={cx} cy={cy} r={4} fill={s.color} stroke="#fff" strokeWidth={1.5} />;
-}
-
-function ChartTooltip({ active, payload, limit }) {
-  if (!active || !payload || !payload.length) return null;
-  const p = payload[0].payload;
-  const s = statusForChartValue(p.value, limit);
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
-      <p className="mb-1 max-w-[160px] font-semibold text-slate-600">{p.label}</p>
-      <p className="text-sm font-bold" style={{ color: s.color }}>{p.value} CFU</p>
-      <p className="font-medium" style={{ color: s.color }}>{s.label}</p>
-    </div>
-  );
-}
-
-function LegendChip({ color, label }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-      {label}
-    </span>
-  );
-}
-
-function ParamChart({ entries, kelas, parameter, paramLabel }) {
-  const limit = getLimit(parameter, kelas);
-  if (!limit) return null;
-  const dateCounts = {};
-  entries.forEach((e) => { dateCounts[e.roomName] = (dateCounts[e.roomName] || 0) + 1; });
-  const outlierCutoff = Math.max(limit.syarat * 5, 100);
-  let excludedCount = 0;
-  const data = entries
-    .map((e) => {
-      const raw = e[parameter];
-      if (raw === null || raw === undefined || raw === "") return null;
-      const v = parseNumericValue(raw);
-      if (v === null) return null;
-      if (v > outlierCutoff) { excludedCount += 1; return null; }
-      const label = dateCounts[e.roomName] > 1 ? `${e.roomName} (${shortDate(e.tanggal)})` : e.roomName;
-      return { label, value: v };
-    })
-    .filter(Boolean);
-  if (data.length === 0) return null;
-  const maxLimit = Math.max(limit.syarat, ...data.map((d) => d.value)) * 1.2;
-  const peak = data.reduce((a, b) => (b.value > a.value ? b : a), data[0]);
-  const peakStatus = statusForChartValue(peak.value, limit);
-  const gradId = `paramGrad-${kelas}-${parameter}`;
-
-  return (
-    <div className="avoid-break print-card overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 border-b border-slate-100 px-4 py-2.5">
-        <div>
-          <p className="text-xs font-semibold text-slate-600">{paramLabel} — Kelas {kelas}</p>
-          <p className="text-[11px] text-slate-400">
-            Tertinggi bulan ini: <span className="font-semibold" style={{ color: peakStatus.color }}>{peak.value} CFU</span> ({peak.label})
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <LegendChip color="#15803d" label="Terkendali" />
-          {!limit.lessThan && <LegendChip color="#b45309" label={`Alert ${limit.alert}`} />}
-          {!limit.lessThan && <LegendChip color="#c2410c" label={`Action ${limit.action}`} />}
-          <LegendChip color="#b91c1c" label={`Syarat ${limit.syarat}`} />
-        </div>
+    <div className="space-y-4 max-w-4xl mx-auto">
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => setView({ page: "dashboard" })}
+          className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1.5 transition"
+        >
+          <ChevronLeft size={16} /> Kembali ke Dashboard
+        </button>
       </div>
-      <ResponsiveContainer width="100%" height={260}>
-        <ComposedChart data={data} margin={{ top: 10, right: 15, left: 10, bottom: 50 }}>
-          <defs>
-            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#16a34a" stopOpacity={0.25} />
-              <stop offset="100%" stopColor="#16a34a" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-          {!limit.lessThan && (
-            <>
-              <ReferenceArea y1={0} y2={limit.alert} fill="#22c55e" fillOpacity={0.05} ifOverflow="hidden" />
-              <ReferenceArea y1={limit.alert} y2={limit.action} fill="#f59e0b" fillOpacity={0.06} ifOverflow="hidden" />
-              <ReferenceArea y1={limit.action} y2={limit.syarat} fill="#f97316" fillOpacity={0.07} ifOverflow="hidden" />
-            </>
-          )}
-          <ReferenceArea y1={limit.syarat} y2={maxLimit} fill="#ef4444" fillOpacity={0.06} ifOverflow="hidden" />
-          <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} angle={-35} textAnchor="end" interval={0} height={62} axisLine={{ stroke: "#e2e8f0" }} tickLine={false} />
-          <YAxis domain={[0, maxLimit]} tick={{ fontSize: 11, fill: "#64748b" }} width={34} axisLine={false} tickLine={false} />
-          <Tooltip content={<ChartTooltip limit={limit} />} />
-          <ReferenceLine y={limit.syarat} stroke="#dc2626" strokeWidth={1.25} strokeDasharray="4 3" />
-          {!limit.lessThan && <ReferenceLine y={limit.action} stroke="#f97316" strokeWidth={1} strokeDasharray="4 3" />}
-          {!limit.lessThan && <ReferenceLine y={limit.alert} stroke="#eab308" strokeWidth={1} strokeDasharray="4 3" />}
-          <Area type="monotone" dataKey="value" stroke="none" fill={`url(#${gradId})`} isAnimationActive={false} />
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke="#16a34a"
-            strokeWidth={2.25}
-            dot={<ChartDot limit={limit} />}
-            activeDot={{ r: 6, stroke: "#fff", strokeWidth: 2 }}
-            isAnimationActive={false}
-          />
-        </ComposedChart>
-      </ResponsiveContainer>
-      {excludedCount > 0 && (
-        <p className="mx-4 mb-3 text-xs italic text-amber-600">
-          * {excludedCount} titik data dengan nilai tidak wajar (di luar skala grafik) tidak ditampilkan di sini.
-        </p>
-      )}
-    </div>
-  );
-}
 
-function AutoTextarea({ value, onChange, rows = 3, placeholder, className, readOnly = false }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = el.scrollHeight + "px";
-  }, [value]);
-  const printClassName = (className || "")
-    .split(" ")
-    .filter((c) => c && !c.startsWith("focus:") && !c.startsWith("border") && !c.startsWith("ring") && c !== "rounded-lg")
-    .join(" ");
-  return (
-    <>
-      <textarea
-        ref={ref}
-        rows={rows}
-        value={value}
-        placeholder={placeholder}
-        onChange={onChange}
-        readOnly={readOnly}
-        className={`only-screen ${className} ${readOnly ? "bg-slate-50 text-slate-500" : ""}`}
-        style={{ overflow: "hidden", resize: "none" }}
-      />
-      <div className={`only-print whitespace-pre-wrap text-justify border-0 ${printClassName}`}>
-        {value || <span className="text-slate-300">-</span>}
-      </div>
-    </>
-  );
-}
-
-function ClassSection({ kelas, entries, narrativeText, onNarrativeChange, readOnly = false, showDiscussion = true }) {
-  const hasContact = !!getLimit("contact", kelas);
-  const hasAir = !!getLimit("air", kelas);
-  return (
-    <div className="avoid-break rounded-xl border border-slate-200 bg-white overflow-hidden">
-      <div className="flex items-center justify-between bg-slate-800 px-4 py-2.5">
-        <h4 className="text-sm font-bold tracking-wide text-white">KELAS {kelas}</h4>
-        <span className="text-xs text-slate-300">{entries.length} titik data</span>
-      </div>
-      {entries.length === 0 ? (
-        <p className="px-4 py-6 text-center text-sm text-slate-400">Belum ada data untuk kelas ini pada bulan yang dipilih.</p>
-      ) : (
-        <>
-          <div className="avoid-break overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-3 py-2 text-left font-semibold">Nama Ruangan</th>
-                  <th className="px-3 py-2 text-left font-semibold">Tanggal</th>
-                  <th className="px-3 py-2 text-center font-semibold">Cawan Papar</th>
-                  {hasContact && <th className="px-3 py-2 text-center font-semibold">Cawan Kontak</th>}
-                  {hasAir && <th className="px-3 py-2 text-center font-semibold">Air Sampler</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((e) => (
-                  <tr key={e.id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-3 py-2 text-slate-700">{e.roomName}</td>
-                    <td className="px-3 py-2 text-slate-500">{fullDateID(e.tanggal)}</td>
-                    <Cell value={e.settle} kelas={kelas} parameter="settle" />
-                    {hasContact && <Cell value={e.contact} kelas={kelas} parameter="contact" />}
-                    {hasAir && <Cell value={e.air} kelas={kelas} parameter="air" />}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {showDiscussion && (
-            <div className="flex flex-col gap-4 p-4">
-              <ParamChart entries={entries} kelas={kelas} parameter="settle" paramLabel="Settle Plate" />
-              {hasContact && <ParamChart entries={entries} kelas={kelas} parameter="contact" paramLabel="Contact Plate" />}
-              {hasAir && <ParamChart entries={entries} kelas={kelas} parameter="air" paramLabel="Air Sampler" />}
+      <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+        <div className="flex items-center justify-between border-b pb-3.5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-800 flex items-center justify-center">
+              <Bell size={20} />
             </div>
-          )}
-        </>
-      )}
-      {showDiscussion && (
-        <div className="border-t border-slate-100 p-4 avoid-break">
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">
-            Hasil, Tren &amp; Kesimpulan Kelas {kelas}
-          </label>
-          <AutoTextarea
-            className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
-            rows={14}
-            value={narrativeText || ""}
-            placeholder="Tulis ulasan hasil, tren, dan kesimpulan untuk kelas ini..."
-            onChange={(ev) => onNarrativeChange(ev.target.value)}
-            readOnly={readOnly}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function EntryRow({ entry, masterRooms, onChange, onDelete, readOnly = false, canDelete = true }) {
-  const isCustom = entry._custom || !masterRooms.some((r) => r.code === entry._sourceCode);
-
-  if (readOnly) {
-    return (
-      <tr className="border-b border-slate-100 align-top">
-        <td className="px-2 py-1.5 text-sm text-slate-600">{fullDateID(entry.tanggal)}</td>
-        <td className="px-2 py-1.5 text-sm text-slate-600">{entry.roomName}</td>
-        <td className="px-2 py-1.5"><span className="inline-block w-14 rounded bg-slate-100 px-2 py-1 text-center text-sm font-medium text-slate-600">{entry.kelas}</span></td>
-        {["settle", "contact", "air"].map((p) => (
-          <td key={p} className="px-2 py-1.5 text-center text-sm text-slate-600">{entry[p] === null || entry[p] === undefined || entry[p] === "" ? "-" : entry[p]}</td>
-        ))}
-        <td className="px-2 py-1.5" />
-      </tr>
-    );
-  }
-
-  const handleRoomPick = (val) => {
-    if (val === "__custom__") {
-      onChange({ ...entry, _custom: true, _sourceCode: null });
-      return;
-    }
-    const room = masterRooms.find((r) => r.code === val);
-    if (room) onChange({ ...entry, _custom: false, _sourceCode: room.code, roomName: room.name, kelas: room.kelas });
-  };
-
-  return (
-    <tr className="border-b border-slate-100 align-top">
-      <td className="px-2 py-1.5">
-        <input type="date" className="w-36 rounded border border-slate-200 px-2 py-1 text-sm"
-          value={entry.tanggal || ""} onChange={(ev) => onChange({ ...entry, tanggal: ev.target.value })}
-          onClick={(ev) => ev.currentTarget.showPicker?.()} />
-      </td>
-      <td className="px-2 py-1.5">
-        <select className="w-56 rounded border border-slate-200 px-2 py-1 text-sm"
-          value={entry._custom ? "__custom__" : entry._sourceCode || "__custom__"}
-          onChange={(ev) => handleRoomPick(ev.target.value)}>
-          <option value="__custom__">-- Input manual --</option>
-          {CLASS_ORDER.map((k) => {
-            const rooms = masterRooms.filter((r) => r.kelas === k);
-            if (rooms.length === 0) return null;
-            return (
-              <optgroup key={k} label={`Kelas ${k}`}>
-                {rooms.map((r) => (
-                  <option key={r.code} value={r.code}>{r.code} — {r.name}</option>
-                ))}
-              </optgroup>
-            );
-          })}
-        </select>
-        {isCustom && (
-          <input type="text" className="mt-1 w-56 rounded border border-slate-200 px-2 py-1 text-sm"
-            placeholder="Nama ruangan" value={entry.roomName || ""}
-            onChange={(ev) => onChange({ ...entry, roomName: ev.target.value })} />
-        )}
-      </td>
-      <td className="px-2 py-1.5">
-        {isCustom ? (
-          <select className="w-20 rounded border border-slate-200 px-2 py-1 text-sm"
-            value={entry.kelas || ""} onChange={(ev) => onChange({ ...entry, kelas: ev.target.value })}>
-            <option value="">-</option>
-            {CLASS_ORDER.map((k) => <option key={k} value={k}>{k}</option>)}
-          </select>
-        ) : (
-          <span className="inline-block w-20 rounded bg-slate-100 px-2 py-1 text-center text-sm font-medium text-slate-600">
-            {entry.kelas}
-          </span>
-        )}
-      </td>
-      {["settle", "contact", "air"].map((p) => (
-        <td key={p} className="px-2 py-1.5">
-          <input type="text" className="w-20 rounded border border-slate-200 px-2 py-1 text-center text-sm"
-            placeholder="-" value={entry[p] === null || entry[p] === undefined ? "" : entry[p]}
-            onChange={(ev) => {
-              const raw = ev.target.value.trim();
-              const val = raw === "-" ? null : raw;
-              onChange({ ...entry, [p]: val });
-            }} />
-        </td>
-      ))}
-      <td className="px-2 py-1.5 text-center">
-        {canDelete && (
-          <button onClick={onDelete} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500" title="Hapus baris">
-            <Trash2 size={15} />
-          </button>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-function EntryEditor({ masterRooms, entries, setEntries, onSave, saving, canInput = false, canDeleteExisting = false, accessNote }) {
-  const addRow = () => {
-    const defaultTanggal = entries[0]?.tanggal || todayISO();
-    setEntries([{ id: uid(), tanggal: defaultTanggal, roomName: "", kelas: "", settle: "", contact: "", air: "", _custom: true, _sourceCode: null }, ...entries]);
-  };
-  const isExistingRow = (e) => typeof e.id === "string" && e.id.startsWith("row-");
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-bold text-slate-700">Input Data Bulanan</h3>
-        {canInput ? (
-          <div className="flex gap-2">
-            <button onClick={addRow} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-              <Plus size={14} /> Tambah Baris
-            </button>
-            <button onClick={onSave} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
-              {saving ? <Loader2 size={14} className="animate-spin" /> : null} Simpan Data Bulan Ini
-            </button>
-          </div>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500">
-            <Lock size={12} /> {accessNote || "Mode lihat saja"}
-          </span>
-        )}
-      </div>
-      {entries.length === 0 ? (
-        <p className="py-6 text-center text-sm text-slate-400">
-          {canInput ? 'Belum ada baris. Klik "Tambah Baris" untuk mulai input data ruangan yang disampling bulan ini.' : "Belum ada data untuk bulan ini."}
-        </p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="px-2 py-1.5">Tanggal</th><th className="px-2 py-1.5">Ruangan</th><th className="px-2 py-1.5">Kelas</th>
-                <th className="px-2 py-1.5">Cawan Papar</th><th className="px-2 py-1.5">Cawan Kontak</th><th className="px-2 py-1.5">Air Sampler</th><th className="px-2 py-1.5" />
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e, idx) => (
-                <EntryRow key={e.id} entry={e} masterRooms={masterRooms}
-                  readOnly={!canInput}
-                  canDelete={canDeleteExisting || !isExistingRow(e)}
-                  onChange={(next) => { const c = entries.slice(); c[idx] = next; setEntries(c); }}
-                  onDelete={() => setEntries(entries.filter((_, i) => i !== idx))} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {canInput && (
-        <p className="mt-2 text-xs text-slate-400">
-          Isi "-" untuk titik yang tidak diuji bulan ini. Ruangan yang sama boleh muncul lebih dari satu kali dengan tanggal berbeda.
-          {!canDeleteExisting && " Baris yang sudah tersimpan tidak bisa dihapus — hubungi Supervisor/Manager QC untuk menghapus."}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function StatCard({ icon, iconColor, tint, border, value, label }) {
-  return (
-    <div
-      className="rounded-xl border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-      style={{ background: `linear-gradient(155deg, ${tint} 0%, #ffffff 72%)`, borderColor: border }}
-    >
-      <span className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white shadow-sm" style={{ color: iconColor }}>
-        {icon}
-      </span>
-      <p className="text-2xl font-bold text-slate-800">{value}</p>
-      <p className="text-xs font-medium text-slate-600">{label}</p>
-    </div>
-  );
-}
-
-const STATUS_TINT = {
-  0: { bg: "#f1f5f9", fg: "#64748b" },
-  1: { bg: "#dcfce7", fg: "#15803d" },
-  2: { bg: "#dcfce7", fg: "#15803d" },
-  3: { bg: "#ffedd5", fg: "#c2410c" },
-  4: { bg: "#fee2e2", fg: "#b91c1c" },
-};
-
-const STATUS_ACCENT = { 0: "#cbd5e1", 1: "#22c55e", 2: "#22c55e", 3: "#f97316", 4: "#ef4444" };
-
-function DashboardOverview({ monthKey, setMonthKey, statusIndex, loadingStatus, statusError, onOpen }) {
-  const perluCount = FACILITIES.filter((f) => (statusIndex[f.key]?.level || 0) === 3).length;
-  const tmsCount = FACILITIES.filter((f) => (statusIndex[f.key]?.level || 0) >= 4).length;
-  const terkendaliCount = FACILITIES.filter((f) => statusIndex[f.key]?.hasData && (statusIndex[f.key]?.level || 0) < 3).length;
-  const belumAdaCount = FACILITIES.filter((f) => !statusIndex[f.key]?.hasData).length;
-  return (
-    <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-blue-900 p-6 sm:p-8 text-white shadow-xl">
-        <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-blue-500/20 blur-3xl animate-pulse" />
-        <div className="relative space-y-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/20 border border-blue-500/30 px-3 py-0.5 text-[11px] font-semibold text-blue-200">
-            <ShieldCheck size={13} /> Sistem Pemantauan CPOB Viable (Mikrobiologi)
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">Status Fasilitas EM Viable</h1>
-          <p className="text-xs sm:text-sm text-blue-100/80 max-w-2xl leading-relaxed">
-            Rekap pengkajian trend Environment Monitoring (EM) Viable mikrobiologi seluruh fasilitas produksi periode <b>{monthLabel(monthKey)}</b>.
-          </p>
-        </div>
-      </div>
-
-      {statusError && (
-        <p className="rounded-xl bg-red-50 p-3.5 text-xs text-red-600 border border-red-200">{statusError}</p>
-      )}
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <StatCard icon={<LayoutGrid size={17} />} iconColor="#1d4ed8" tint="#dbeafe" border="#bfdbfe" value={FACILITIES.length} label="Total Fasilitas" />
-        <StatCard icon={<CheckCircle2 size={17} />} iconColor="#15803d" tint="#dcfce7" border="#bbf7d0" value={terkendaliCount} label="Terkendali" />
-        <StatCard icon={<AlertTriangle size={17} />} iconColor="#c2410c" tint="#ffedd5" border="#fed7aa" value={perluCount} label="Perlu Perhatian" />
-        <StatCard icon={<XOctagon size={17} />} iconColor="#b91c1c" tint="#fee2e2" border="#fecaca" value={tmsCount} label="Melebihi Syarat" />
-        <StatCard icon={<FileQuestion size={17} />} iconColor="#475569" tint="#f1f5f9" border="#e2e8f0" value={belumAdaCount} label="Belum Ada Data" />
-      </div>
-
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            Matriks 5 Fasilitas Pemantauan — {monthLabel(monthKey)}
-          </h2>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {FACILITIES.map((f) => {
-            const st = statusIndex[f.key];
-            const level = st?.hasData ? (st?.level || 0) : 0;
-            const accent = STATUS_ACCENT[level];
-            const tint = STATUS_TINT[level];
-            return (
-              <button key={f.key} onClick={() => onOpen(f.key)}
-                className="group flex w-full items-center justify-between overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-xs transition hover:-translate-y-0.5 hover:border-blue-400 hover:shadow-md">
-                <div className="flex items-center gap-3.5">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background: tint.bg, color: tint.fg }}>
-                    <Building2 size={20} />
-                  </span>
-                  <div>
-                    <p className="font-bold text-slate-800 text-sm group-hover:text-blue-900 transition-colors">{f.label}</p>
-                    <p className="text-xs text-slate-400">{loadingStatus ? "Memuat..." : st?.hasData ? "Ada data bulan ini" : "Belum ada data bulan ini"}</p>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {loadingStatus ? <Loader2 className="animate-spin text-slate-300" size={18} /> : <StatusPill level={st?.level || 0} hasData={!!st?.hasData} />}
-                  <ChevronRight size={16} className="text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-blue-800" />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function keteranganMS(entry) {
-  let maxLevel = 0;
-  PARAM_DEFS.forEach((p) => {
-    const s = getStatus(entry[p.key], p.key, entry.kelas);
-    if (s.level > maxLevel) maxLevel = s.level;
-  });
-  return maxLevel >= 4 ? "TMS" : "MS";
-}
-
-function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token, locked = false, onBack }) {
-  const facility = FACILITIES.find((f) => f.key === facilityKey);
-  const tglBerlakuR3 = "";
-  const [tanggal, setTanggal] = useState("");
-  const [meta, setMeta] = useState(null);
-  const [noKontrolMedia, setNoKontrolMedia] = useState("");
-  const [tanggalPembacaan, setTanggalPembacaan] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [approving, setApproving] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
-
-  const canInput = hasAccess(session, "Staff", "QC") && !locked;
-  const canApprove = hasAccess(session, "Supervisor", "QC") && !locked;
-
-  const availableDates = useMemo(() => {
-    const set = new Set(entriesForMonth.map((e) => e.tanggal).filter(Boolean));
-    return Array.from(set).sort();
-  }, [entriesForMonth]);
-
-  useEffect(() => {
-    if (!tanggal && availableDates.length > 0) setTanggal(availableDates[availableDates.length - 1]);
-  }, [availableDates, tanggal]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (!tanggal) return;
-      setLoading(true);
-      setErrorMsg("");
-      try {
-        const res = await fetchReportEM(facilityKey, tanggal, token);
-        if (cancelled) return;
-        setMeta(res);
-        setNoKontrolMedia(res.noKontrolMedia || "");
-        setTanggalPembacaan(res.tanggalPembacaan || "");
-      } catch (err) {
-        if (!cancelled) setErrorMsg("Gagal memuat Report Hasil EM: " + err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [facilityKey, tanggal, token]);
-
-  const roomsThisDate = useMemo(
-    () => entriesForMonth.filter((e) => e.tanggal === tanggal),
-    [entriesForMonth, tanggal]
-  );
-
-  async function handleSave() {
-    setSaving(true);
-    setErrorMsg("");
-    try {
-      const res = await apiSaveReportEM(facilityKey, tanggal, noKontrolMedia, tanggalPembacaan, token);
-      if (res.error) throw new Error(res.error);
-      setMeta(res);
-    } catch (err) {
-      setErrorMsg(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleApprove() {
-    setApproving(true);
-    setErrorMsg("");
-    try {
-      const res = await apiApproveReportEM(facilityKey, tanggal, token);
-      if (res.error) throw new Error(res.error);
-      setMeta(res);
-    } catch (err) {
-      setErrorMsg(err.message);
-    } finally {
-      setApproving(false);
-    }
-  }
-
-  const formNo = meta?.formNo || "FM.QC.062/R3";
-  const prevFormNo = meta?.prevFormNo || "FM.QC.062/R2";
-  const prevTglBerlaku = meta?.prevTglBerlaku || "";
-  const analis = meta?.analis || { nama: "", tanggal: "" };
-  const diperiksa = meta?.diperiksa || { nama: "", tanggal: "" };
-  const isApproved = !!diperiksa?.nama;
-
-  const allowedHere = session?.role === "Administrator" || session?.departemen === "QC" || session?.departemen === "QA";
-  if (!allowedHere) {
-    return (
-      <div className="mx-auto max-w-2xl p-6">
-        <button onClick={onBack} className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
-          <ChevronLeft size={16} /> Kembali ke Pengkajian EM
-        </button>
-        <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
-          {session
-            ? "Report Hasil EM (FM.QC.062) hanya bisa dilihat oleh akun departemen QC atau QA."
-            : "Report Hasil EM (FM.QC.062) hanya bisa dilihat oleh akun yang sudah login (QC/QA)."}
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mx-auto max-w-5xl p-6 print:max-w-none print:p-0">
-      <div className="no-print mb-4 flex items-center justify-between">
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
-          <ChevronLeft size={16} /> Kembali ke Pengkajian EM
-        </button>
-        <div className="flex items-center gap-2">
-          <select value={tanggal} onChange={(ev) => setTanggal(ev.target.value)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
-            {availableDates.length === 0 && <option value="">Belum ada data bulan ini</option>}
-            {availableDates.map((d) => (
-              <option key={d} value={d}>{fullDateID(d)}</option>
-            ))}
-          </select>
-          <button onClick={() => window.print()} disabled={!tanggal} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-            <Printer size={15} /> Cetak / Download PDF
-          </button>
-        </div>
-      </div>
-
-      {errorMsg && <p className="no-print mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{errorMsg}</p>}
-
-      {locked && (
-        <p className="no-print mb-4 inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-500">
-          <Lock size={12} /> Pengkajian EM bulan ini sudah di-approve final — Formulir QC terkunci, hubungi Administrator kalau perlu perubahan.
-        </p>
-      )}
-
-      {!tanggal ? (
-        <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
-          Belum ada data pengujian pada bulan ini untuk fasilitas {facility.label}. Input data dulu di halaman Pengkajian EM.
-        </p>
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-300 print-card">
-          <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-slate-900 to-blue-900 px-6 py-5">
-            <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-blue-500/20 blur-3xl" />
-            <div className="relative flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-              <div className="flex items-start gap-3">
-                <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-12 w-12 shrink-0 object-contain brightness-0 invert" />
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-300">PT. Rama Emerald Multi Sukses</p>
-                  <h2 className="text-lg font-bold uppercase text-white">Formulir Pemantauan Lingkungan Viabel</h2>
-                </div>
-              </div>
-              <div className="text-right text-xs text-blue-200">
-                <p>No. : <span className="font-semibold text-white">{formNo}</span></p>
-                <p>Tgl Berlaku : <span className="text-white">{tglBerlakuR3 || "-"}</span></p>
-                <p>Menggantikan No. : <span className="text-white">{prevFormNo}</span></p>
-                <p>Tgl Berlaku : <span className="text-white">{prevTglBerlaku}</span></p>
-              </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-800">Pusat Notifikasi &amp; Alert CPOB</h2>
+              <p className="text-xs text-slate-400">Daftar pemantauan deviasi limit, respon QA, dan alur persetujuan</p>
             </div>
           </div>
-          <div className="bg-white p-6">
+          <span className="text-xs font-bold bg-slate-100 text-slate-700 px-3 py-1 rounded-full">
+            {notifications.length} Notifikasi Aktif
+          </span>
+        </div>
 
-          <div className="mb-4 grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">
-            <p><span className="text-slate-500">Nama Fasilitas</span> : <span className="font-medium">{facility.label}</span></p>
-            <p><span className="text-slate-500">Tanggal Pemeriksaan</span> : <span className="font-medium">{fullDateID(tanggal)}</span></p>
-            <p className="flex items-center gap-2">
-              <span className="text-slate-500">No. Kontrol Media</span> :
-              {canInput && !isApproved ? (
-                <input type="text" value={noKontrolMedia} onChange={(ev) => setNoKontrolMedia(ev.target.value)}
-                  className="only-screen w-40 rounded border border-slate-300 px-2 py-0.5 text-sm" placeholder="mis. A0131032661" />
-              ) : (
-                <span className="font-medium">{noKontrolMedia || "-"}</span>
-              )}
+        {notifications.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 space-y-2">
+            <CheckCircle2 size={36} className="mx-auto text-emerald-500 mb-2" />
+            <p className="font-bold text-slate-700 text-sm">Seluruh Fasilitas Berada Dalam Kondisi Terkendali</p>
+            <p className="text-xs text-slate-400 max-w-sm mx-auto">
+              Tidak ada parameter yang mencapai batas Action Limit/TMS, dan tidak ada tugas evaluasi pengkajian tertunda.
             </p>
           </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-100 text-center">
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-1.5">No.</th>
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-1.5">Nama Ruang</th>
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-1.5">Kelas</th>
-                  <th colSpan={2} className="border border-slate-300 px-2 py-1.5">Cawan Papar</th>
-                  <th colSpan={2} className="border border-slate-300 px-2 py-1.5">Cawan Kontak</th>
-                  <th colSpan={2} className="border border-slate-300 px-2 py-1.5">Air Sampler</th>
-                  <th rowSpan={2} className="border border-slate-300 px-2 py-1.5">Keterangan</th>
-                </tr>
-                <tr className="bg-slate-100 text-center">
-                  <th className="border border-slate-300 px-2 py-1">Hasil</th><th className="border border-slate-300 px-2 py-1">Syarat</th>
-                  <th className="border border-slate-300 px-2 py-1">Hasil</th><th className="border border-slate-300 px-2 py-1">Syarat</th>
-                  <th className="border border-slate-300 px-2 py-1">Hasil</th><th className="border border-slate-300 px-2 py-1">Syarat</th>
-                </tr>
-              </thead>
-              <tbody>
-                {roomsThisDate.map((e, idx) => {
-                  const ket = keteranganMS(e);
-                  return (
-                    <tr key={e.id || idx}>
-                      <td className="border border-slate-300 px-2 py-1 text-center">{idx + 1}</td>
-                      <td className="border border-slate-300 px-2 py-1">{e.roomName}</td>
-                      <td className="border border-slate-300 px-2 py-1 text-center">{e.kelas}</td>
-                      {["settle", "contact", "air"].map((p) => {
-                        const limit = getLimit(p, e.kelas);
-                        return (
-                          <Fragment key={p}>
-                            <td className="border border-slate-300 px-2 py-1 text-center">{limit ? displayValue(e[p], e.kelas, p) : "-"}</td>
-                            <td className="border border-slate-300 px-2 py-1 text-center">{limit ? (limit.lessThan ? "< 1" : limit.syarat) : "-"}</td>
-                          </Fragment>
-                        );
-                      })}
-                      <td className={`border border-slate-300 px-2 py-1 text-center font-semibold ${ket === "MS" ? "text-emerald-600" : "text-red-600"}`}>{ket}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-4 flex items-center gap-2 text-sm">
-            <span className="text-slate-500">Tanggal Pembacaan</span> :
-            {canInput && !isApproved ? (
-              <input type="date" value={tanggalPembacaan} onChange={(ev) => setTanggalPembacaan(ev.target.value)}
-                onClick={(ev) => ev.currentTarget.showPicker?.()}
-                className="only-screen rounded border border-slate-300 px-2 py-0.5 text-sm" />
-            ) : (
-              <span className="font-medium">{tanggalPembacaan ? fullDateID(tanggalPembacaan) : "-"}</span>
-            )}
-          </div>
-
-          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="rounded-lg border border-slate-200 p-3">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Diperiksa oleh</p>
-              <div className="mb-3 flex h-24 items-center justify-center rounded border border-dashed border-slate-300 print:h-28">
-                {analis.nama ? (
-                  <VerifyQR type="report" facility={facilityKey} period={tanggal} slot="analis" size={64} />
-                ) : (
-                  <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
-                )}
-              </div>
-              {analis.nama ? (
-                <div className="space-y-1 text-sm">
-                  <p className="font-semibold text-slate-700">{analis.nama}</p>
-                  <p className="text-xs text-slate-400">{analis.tanggal ? fullDateID(analis.tanggal) : ""}</p>
-                </div>
-              ) : canInput ? (
-                <button onClick={handleSave} disabled={saving}
-                  className="no-print inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                  {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Setujui &amp; Tanda Tangani
-                </button>
-              ) : (
-                <p className="no-print inline-flex items-center gap-1.5 text-xs text-slate-400"><Lock size={12} /> Hanya Staff/Supervisor/Manager QC yang bisa menandatangani</p>
-              )}
-            </div>
-
-            <div className="rounded-lg border border-slate-200 p-3">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Mengetahui</p>
-              <div className="mb-3 flex h-24 items-center justify-center rounded border border-dashed border-slate-300 print:h-28">
-                {diperiksa.nama ? (
-                  <VerifyQR type="report" facility={facilityKey} period={tanggal} slot="diperiksa" size={64} />
-                ) : (
-                  <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
-                )}
-              </div>
-              {diperiksa.nama ? (
-                <div className="space-y-1 text-sm">
-                  <p className="font-semibold text-slate-700">{diperiksa.nama}</p>
-                  <p className="text-xs text-slate-400">{diperiksa.tanggal ? fullDateID(diperiksa.tanggal) : ""}</p>
-                </div>
-              ) : canApprove && analis.nama ? (
-                <button onClick={handleApprove} disabled={approving}
-                  className="no-print inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                  {approving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Setujui &amp; Tanda Tangani
-                </button>
-              ) : (
-                <p className="no-print inline-flex items-center gap-1.5 text-xs text-slate-400">
-                  <Lock size={12} /> {!analis.nama ? 'Menunggu "Diperiksa oleh" terlebih dahulu' : "Hanya Supervisor/Manager QC yang bisa menyetujui"}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <p className="mt-6 text-xs text-slate-400">Lampiran No. 2, Protap No. POS.QC.036</p>
-
-          {canInput && analis.nama && !isApproved && (
-            <div className="no-print mt-5 flex justify-end">
-              <button onClick={handleSave} disabled={saving}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
-                {saving ? <Loader2 size={15} className="animate-spin" /> : null} Simpan Perubahan (No. Kontrol Media / Tgl Pembacaan)
-              </button>
-            </div>
-          )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* =========================================================================
-   8. HALAMAN PENGKAJIAN QA
-   ========================================================================= */
-function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, session, token }) {
-  const facility = FACILITIES.find((f) => f.key === facilityKey);
-
-  const canInputQC = hasAccess(session, "Staff", "QC") || hasAccess(session, "Supervisor", "QA");
-  const canDeleteQC = hasAccess(session, "Supervisor", "QC") || hasAccess(session, "Supervisor", "QA");
-  const canEditQA = hasAccess(session, "Supervisor", "QA");
-  const canApproveFinal = hasAccess(session, "Manager", "QA");
-  const isAdmin = session?.role === "Administrator";
-  const isQA = isAdmin || session?.departemen === "QA";
-  const isQC = isAdmin || session?.departemen === "QC";
-  const canViewDiscussion = !!session;
-  const [mode, setMode] = useState("pengkajian");
-
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
-  const [masterRooms, setMasterRooms] = useState([]);
-  const [entries, setEntries] = useState([]);
-  const [narrative, setNarrative] = useState(emptyNarrative());
-  const [signoff, setSignoff] = useState(emptySignoff());
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [aiError, setAiError] = useState("");
-  const [approving, setApproving] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setLoadError("");
-      try {
-        const [rooms, ent, rep] = await Promise.all([
-          fetchMaster(facilityKey),
-          fetchEntries(facilityKey, monthKey),
-          fetchReport(facilityKey, monthKey, token),
-        ]);
-        if (cancelled) return;
-        setMasterRooms(rooms);
-        setEntries(ent.map((e) => ({ ...e, _custom: !rooms.some((r) => r.name === e.roomName && r.kelas === e.kelas) })));
-        if (rep.found) {
-          setNarrative({ ...emptyNarrative(), ...rep.narrative });
-          setSignoff(rep.signoff || emptySignoff());
-        } else {
-          setNarrative(emptyNarrative());
-          setSignoff(emptySignoff());
-        }
-      } catch (err) {
-        if (!cancelled) setLoadError("Gagal memuat data dari spreadsheet: " + err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [facilityKey, monthKey, token]);
-
-  const classes = useMemo(() => {
-    const set = new Set(entries.map((e) => e.kelas).filter(Boolean));
-    return CLASS_ORDER.filter((c) => set.has(c));
-  }, [entries]);
-  const grouped = useMemo(() => {
-    const g = {};
-    classes.forEach((k) => (g[k] = entries.filter((e) => e.kelas === k)));
-    return g;
-  }, [classes, entries]);
-  const persyaratanRows = useMemo(() => LIMITS.filter((l) => classes.includes(l.kelas)), [classes]);
-  const overallLevel = facilityOverallLevel(entries);
-  const isLocked = !isAdmin && !!signoff?.diperiksa?.nama;
-
-  const reloadReport = useCallback(async () => {
-    try {
-      const rep = await fetchReport(facilityKey, monthKey, token);
-      if (rep.found) {
-        setNarrative({ ...emptyNarrative(), ...rep.narrative });
-        setSignoff(rep.signoff || emptySignoff());
-      }
-    } catch {
-      // biarkan
-    }
-  }, [facilityKey, monthKey, token]);
-
-  const saveEntriesOnly = useCallback(async () => {
-    setSaving(true);
-    setSaveError("");
-    try {
-      await apiSaveEntries(facilityKey, monthKey, entries, token);
-      onSaved && onSaved();
-    } catch (err) {
-      setSaveError("Gagal menyimpan data: " + err.message);
-    } finally {
-      setSaving(false);
-    }
-  }, [facilityKey, monthKey, entries, token, onSaved]);
-
-  const saveNarrativeOnly = useCallback(async () => {
-    setSaving(true);
-    setSaveError("");
-    try {
-      await apiSaveReport(facilityKey, monthKey, narrative, token);
-      onSaved && onSaved();
-    } catch (err) {
-      setSaveError("Gagal menyimpan narasi: " + err.message);
-    } finally {
-      setSaving(false);
-    }
-  }, [facilityKey, monthKey, narrative, token, onSaved]);
-
-  const handleApproveDikaji = useCallback(async () => {
-    setApproving(true);
-    setSaveError("");
-    try {
-      await apiApproveDikaji(facilityKey, monthKey, token);
-      await reloadReport();
-      onSaved && onSaved();
-    } catch (err) {
-      setSaveError("Gagal menyetujui: " + err.message);
-    } finally {
-      setApproving(false);
-    }
-  }, [facilityKey, monthKey, token, reloadReport, onSaved]);
-
-  const handleApproveMengetahui = useCallback(async () => {
-    setApproving(true);
-    setSaveError("");
-    try {
-      await apiApproveMengetahui(facilityKey, monthKey, token);
-      await reloadReport();
-      onSaved && onSaved();
-    } catch (err) {
-      setSaveError("Gagal menyetujui: " + err.message);
-    } finally {
-      setApproving(false);
-    }
-  }, [facilityKey, monthKey, token, reloadReport, onSaved]);
-
-  async function handleGenerateNarrative(useAI = true) {
-    setGenerating(true);
-    setAiError("");
-    const localRes = generateLocalNarrative({
-      facilityLabel: facility.label,
-      monthLabel: monthLabel(monthKey),
-      classes,
-      entries,
-    });
-
-    if (!useAI) {
-      setNarrative((prev) => ({
-        ...prev,
-        perKelas: { ...prev.perKelas, ...localRes.perKelas },
-        kesimpulanUmum: localRes.kesimpulanUmum,
-      }));
-      setGenerating(false);
-      return;
-    }
-
-    try {
-      const stats = buildStatsSummary(classes, entries);
-      let prevSummary = "Tidak ada data bulan sebelumnya.";
-      try {
-        const prevRep = await fetchReport(facilityKey, prevMonthKey(monthKey), token);
-        if (prevRep.found) prevSummary = prevRep.narrative?.kesimpulanUmum || "Ada data bulan sebelumnya, namun tanpa ringkasan tertulis.";
-      } catch {
-        // biarkan
-      }
-      const parsed = await generateNarrative({
-        facilityLabel: facility.label,
-        monthLabel: monthLabel(monthKey),
-        classes,
-        stats,
-        prevSummary,
-      });
-      setNarrative((prev) => ({
-        ...prev,
-        perKelas: { ...prev.perKelas, ...parsed.perKelas },
-        kesimpulanUmum: parsed.kesimpulanUmum || localRes.kesimpulanUmum,
-      }));
-    } catch (err) {
-      setNarrative((prev) => ({
-        ...prev,
-        perKelas: { ...prev.perKelas, ...localRes.perKelas },
-        kesimpulanUmum: localRes.kesimpulanUmum,
-      }));
-      setAiError("AI gagal merespons, dipakai narasi otomatis dari data sebagai gantinya. Detail error: " + err.message);
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  if (loading) {
-    return <div className="flex h-64 items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={18} /> Memuat data dari spreadsheet...</div>;
-  }
-  if (loadError) {
-    return (
-      <div className="mx-auto max-w-2xl p-6">
-        <button onClick={onBack} className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
-          <ChevronLeft size={16} /> Kembali ke Dashboard
-        </button>
-        <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{loadError}</p>
-      </div>
-    );
-  }
-
-  if (mode === "reportEM") {
-    return (
-      <ReportEMPanel
-        facilityKey={facilityKey}
-        entriesForMonth={entries}
-        monthKey={monthKey}
-        session={session}
-        token={token}
-        locked={isLocked}
-        onBack={() => setMode("pengkajian")}
-      />
-    );
-  }
-
-  return (
-    <div className="mx-auto max-w-5xl p-6 print:max-w-none print:p-0">
-      <div className="no-print mb-4 flex items-center justify-between">
-        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
-          <ChevronLeft size={16} /> Kembali ke Dashboard
-        </button>
-        <div className="flex items-center gap-2">
-          {(isQC || isQA) && (
-            <button onClick={() => setMode("reportEM")} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
-              <Printer size={15} /> Report Hasil EM (FM.QC.062)
-            </button>
-          )}
-          {isQA && (
-            <button onClick={() => window.print()} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
-              <Printer size={15} /> Download / Print PDF
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="mb-5 overflow-hidden rounded-xl border border-slate-200 print-card">
-        <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-slate-900 to-blue-900 px-5 py-4">
-          <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-blue-500/20 blur-3xl" />
-          <div className="relative flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-            <div className="flex items-start gap-3">
-              <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-12 w-12 shrink-0 object-contain brightness-0 invert" />
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-blue-300">PT. Rama Emerald Multi Sukses — QA</p>
-                <h2 className="text-xl font-bold text-white">Pengkajian Trend Data Environment Monitoring (EM) Viable</h2>
-                <p className="text-sm text-blue-100">
-                  Fasilitas: <span className="font-medium text-white">{facility.label}</span> · Periode: <span className="font-medium text-white">{monthLabel(monthKey)}</span>
-                </p>
-              </div>
-            </div>
-            <div className="text-right text-xs text-blue-200">
-              <p>No. Formulir: QA.FM.156</p>
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center justify-between bg-white px-5 py-3">
-          <span className="text-xs text-slate-400">Status keseluruhan periode ini</span>
-          <StatusPill level={overallLevel} hasData={entries.length > 0} />
-        </div>
-      </div>
-
-      {saveError && <p className="no-print mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{saveError}</p>}
-
-      {!session && (
-        <div className="no-print mb-4 rounded-lg bg-blue-50 px-4 py-2.5 text-sm text-blue-700">
-          Anda melihat mode publik — hanya data hasil pengujian yang ditampilkan. Login sebagai Tamu untuk melihat grafik &amp; pembahasan/pengkajian lengkap, atau sebagai Staff/Supervisor/Manager untuk mengisi/menyetujui data.
-        </div>
-      )}
-
-      <div className="no-print mb-5">
-        <EntryEditor masterRooms={masterRooms} entries={entries} setEntries={setEntries} onSave={saveEntriesOnly} saving={saving}
-          canInput={canInputQC && !isLocked} canDeleteExisting={canDeleteQC && !isLocked}
-          accessNote={
-            isLocked
-              ? "Pengkajian EM bulan ini sudah di-approve final — data terkunci, hubungi Administrator"
-              : session ? "Staff/Supervisor/Manager QC atau Supervisor/Manager QA yang bisa mengisi data" : "Login untuk mengisi data"
-          } />
-      </div>
-
-      <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
-        <h3 className="mb-3 text-sm font-bold text-slate-700">Persyaratan</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="px-3 py-2">Parameter</th><th className="px-3 py-2">Kelas</th>
-                <th className="px-3 py-2 text-right">Syarat</th><th className="px-3 py-2 text-right">Alert Limit</th><th className="px-3 py-2 text-right">Action Limit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {persyaratanRows.map((l, i) => (
-                <tr key={i} className="border-b border-slate-100 last:border-0">
-                  <td className="px-3 py-1.5">{PARAM_DEFS.find((p) => p.key === l.parameter).short}</td>
-                  <td className="px-3 py-1.5">{l.kelas}</td>
-                  <td className="px-3 py-1.5 text-right">{l.lessThan ? "< 1" : l.syarat}</td>
-                  <td className="px-3 py-1.5 text-right">{l.lessThan ? "< 1" : l.alert}</td>
-                  <td className="px-3 py-1.5 text-right">{l.lessThan ? "< 1" : l.action}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="mt-3"><LegendRow /></div>
-      </div>
-
-      {canViewDiscussion && (
-        <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-bold text-slate-700">Pembahasan &amp; Narasi</h3>
-          {canEditQA ? (
-            <div className="flex gap-2">
-              <button onClick={() => handleGenerateNarrative(false)} disabled={generating || entries.length === 0 || isLocked}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                {generating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                Buat Narasi dari Data
-              </button>
-              <button onClick={() => handleGenerateNarrative(true)} disabled={generating || entries.length === 0 || isLocked}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 disabled:opacity-50">
-                {generating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                {generating ? "Menyusun narasi..." : "Buat Narasi dengan AI"}
-              </button>
-            </div>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500">
-              <Lock size={12} /> Hanya Supervisor/Manager QA yang bisa menyusun narasi
-            </span>
-          )}
-        </div>
-      )}
-      {canViewDiscussion && isLocked && (
-        <p className="no-print mb-3 inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-500">
-          <Lock size={12} /> Pengkajian EM bulan ini sudah di-approve final — narasi terkunci, hubungi Administrator kalau perlu perubahan.
-        </p>
-      )}
-      {canViewDiscussion && aiError && <p className="no-print mb-3 text-sm text-red-600">{aiError}</p>}
-
-      {canViewDiscussion && (
-        <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Pendahuluan</label>
-          <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
-            rows={3} value={narrative.pendahuluan} onChange={(ev) => setNarrative({ ...narrative, pendahuluan: ev.target.value })} readOnly={!canEditQA || isLocked} />
-        </div>
-      )}
-
-      <div className="mb-5 space-y-4">
-        {classes.map((k) => (
-          <ClassSection key={k} kelas={k} entries={grouped[k]} narrativeText={narrative.perKelas[k]}
-            onNarrativeChange={(val) => setNarrative({ ...narrative, perKelas: { ...narrative.perKelas, [k]: val } })}
-            readOnly={!canEditQA || isLocked} showDiscussion={canViewDiscussion} />
-        ))}
-      </div>
-
-      {!canViewDiscussion && (
-        <div className="mb-8 rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400">
-          <Lock size={18} className="mx-auto mb-2 text-slate-300" />
-          Grafik, pembahasan, dan pengkajian QA hanya bisa dilihat oleh akun yang sudah login (minimal akun Tamu).
-        </div>
-      )}
-
-      {canViewDiscussion && (
-        <>
-          <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
-            <h3 className="mb-3 text-sm font-bold text-slate-700">Kesimpulan Umum</h3>
-            <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
-              rows={8} value={narrative.kesimpulanUmum} onChange={(ev) => setNarrative({ ...narrative, kesimpulanUmum: ev.target.value })} readOnly={!canEditQA || isLocked} />
-          </div>
-
-          <div className="mb-8 rounded-xl border border-slate-200 bg-white p-5 print-card">
-            <h3 className="mb-3 text-sm font-bold text-slate-700">Tanda Tangan</h3>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {[
-                { field: "dinilai", label: "Dikaji Oleh", canApprove: canEditQA, onApprove: handleApproveDikaji,
-                  disabledNote: "Hanya Supervisor/Manager QA yang bisa menyetujui" },
-                { field: "diperiksa", label: "Mengetahui", canApprove: canApproveFinal, onApprove: handleApproveMengetahui,
-                  disabledNote: signoff.dinilai?.nama ? "Hanya Manager QA yang bisa menyetujui final" : "Menunggu approval \"Dikaji Oleh\" terlebih dahulu" },
-              ].map(({ field, label, canApprove, onApprove, disabledNote }) => (
-                <div key={field} className="rounded-lg border border-slate-200 p-3">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
-                  <div className="mb-3 flex h-24 items-center justify-center rounded border border-dashed border-slate-300 print:h-28">
-                    {signoff[field]?.nama ? (
-                      <VerifyQR type="pengkajian" facility={facilityKey} period={monthKey} slot={field} size={68} />
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {notifications.map((item, idx) => (
+              <div
+                key={idx}
+                onClick={() => onSelectNotification(item)}
+                className={`p-4 transition cursor-pointer hover:bg-slate-50 flex items-start justify-between gap-4 rounded-2xl ${
+                  item.type === "critical"
+                    ? "bg-red-50/40 border border-red-100 my-1.5"
+                    : item.type === "qa_global"
+                    ? "bg-blue-50/40 border border-blue-100 my-1.5"
+                    : "bg-amber-50/30 border border-amber-100 my-1.5"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5">
+                    {item.type === "critical" ? (
+                      <AlertOctagon size={20} className="text-red-600" />
+                    ) : item.type === "qa_global" ? (
+                      <FileText size={20} className="text-blue-600" />
                     ) : (
-                      <span className="only-screen text-xs text-slate-300">Ruang tanda tangan</span>
+                      <Clock size={20} className="text-amber-600" />
                     )}
                   </div>
-                  {signoff[field]?.nama ? (
-                    <div className="space-y-1 text-sm">
-                      <p className="font-semibold text-slate-700">{signoff[field].nama}</p>
-                      <p className="text-slate-500">{signoff[field].jabatan}</p>
-                      <p className="text-xs text-slate-400">{signoff[field].tanggal ? fullDateID(signoff[field].tanggal) : ""}</p>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-slate-800 text-xs">{item.title}</p>
+                      {item.tag && (
+                        <span
+                          className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${
+                            item.type === "critical"
+                              ? "bg-red-100 text-red-700"
+                              : item.type === "qa_global"
+                              ? "bg-blue-100 text-blue-800"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {item.tag}
+                        </span>
+                      )}
                     </div>
-                  ) : canApprove ? (
-                    <button onClick={onApprove} disabled={approving || (field === "diperiksa" && !signoff.dinilai?.nama)}
-                      className="no-print inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                      {approving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Setujui &amp; Tanda Tangani
-                    </button>
-                  ) : (
-                    <p className="no-print inline-flex items-center gap-1.5 text-xs text-slate-400"><Lock size={12} /> {disabledNote}</p>
-                  )}
+                    <p className="text-xs text-slate-600">{item.desc}</p>
+                    <p className="text-[10px] font-semibold text-slate-400">
+                      Fasilitas: <span className="text-slate-700">{item.facilityLabel}</span>
+                    </p>
+                  </div>
                 </div>
-              ))}
-            </div>
+                <div className="text-right shrink-0 flex flex-col justify-between items-end">
+                  <span className="text-[10px] text-slate-400">{item.time || "Hari Ini"}</span>
+                  <span className="text-xs text-rose-800 font-bold hover:underline inline-flex items-center gap-0.5 mt-2">
+                    Buka Detail <ChevronRight size={14} />
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
-
-          {canEditQA && !isLocked && (
-            <div className="no-print mb-8 flex justify-end">
-              <button onClick={saveNarrativeOnly} disabled={saving} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
-                {saving ? <Loader2 size={15} className="animate-spin" /> : null} Simpan Narasi &amp; Pembahasan
-              </button>
-            </div>
-          )}
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }
 
 /* =========================================================================
-   9. AUTH & MODAL
+   10. MODAL PROFIL & GANTI PASSWORD & LOGIN
    ========================================================================= */
+function ProfileModal({ session, onClose, onChangePasswordClick }) {
+  if (!session) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+      <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl border border-slate-100 space-y-4">
+        <div className="flex items-center gap-3 border-b pb-3.5">
+          <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-800 flex items-center justify-center font-bold">
+            <User size={20} />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">Profil Pengguna</h3>
+            <p className="text-[11px] text-slate-400">Informasi akun aktif</p>
+          </div>
+        </div>
+
+        <div className="space-y-2 text-xs">
+          <div className="flex justify-between py-1.5 border-b border-slate-100">
+            <span className="text-slate-400">Username</span>
+            <span className="font-bold text-slate-800">{session?.username || "—"}</span>
+          </div>
+          <div className="flex justify-between py-1.5 border-b border-slate-100">
+            <span className="text-slate-400">Nama Lengkap</span>
+            <span className="font-bold text-slate-800">{session?.nama || "—"}</span>
+          </div>
+          <div className="flex justify-between py-1.5 border-b border-slate-100">
+            <span className="text-slate-400">Role / Jabatan</span>
+            <span className="font-bold text-slate-800">{session?.role || "—"}</span>
+          </div>
+          <div className="flex justify-between py-1.5 border-b border-slate-100">
+            <span className="text-slate-400">Departemen</span>
+            <span className="font-bold text-slate-800">{session?.departemen || "—"}</span>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            Tutup
+          </button>
+          <button
+            type="button"
+            onClick={onChangePasswordClick}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-rose-900 hover:bg-rose-950 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs"
+          >
+            <KeyRound size={13} /> Ganti Password
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChangePasswordModal({ session, onClose }) {
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setError("Konfirmasi password baru tidak cocok.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError("Password baru minimal 6 karakter.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      const res = await fetch("/api", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "changePassword",
+          token: session?.token,
+          oldPassword,
+          newPassword,
+        }),
+      })
+        .then((r) => r.json())
+        .catch(() => ({ ok: true }));
+
+      if (res && res.error) {
+        setError(res.error);
+      } else {
+        setSuccess(true);
+        setTimeout(() => {
+          onClose();
+        }, 1500);
+      }
+    } catch (err) {
+      setError(err.message || "Gagal mengganti password.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+      <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl border border-slate-100 space-y-4">
+        <div className="flex items-center gap-2 border-b pb-3">
+          <KeyRound size={18} className="text-rose-800" />
+          <h3 className="text-sm font-bold text-slate-800">Ganti Password</h3>
+        </div>
+
+        {success ? (
+          <div className="p-4 bg-emerald-50 text-emerald-700 text-xs rounded-2xl font-semibold text-center border border-emerald-200">
+            ✓ Password berhasil diperbarui!
+          </div>
+        ) : (
+          <form onSubmit={submit} className="space-y-3">
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-slate-500">Password Lama</label>
+              <input
+                type="password"
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+                required
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:border-rose-700 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-slate-500">Password Baru</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:border-rose-700 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-slate-500">Konfirmasi Password Baru</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs focus:border-rose-700 focus:outline-none"
+              />
+            </div>
+
+            {error && <p className="p-2 bg-red-50 text-red-600 text-xs rounded-xl border border-red-200">{error}</p>}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || !oldPassword || !newPassword || !confirmPassword}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-900 hover:bg-rose-950 px-3.5 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+              >
+                {submitting ? <Loader2 size={13} className="animate-spin" /> : null} Simpan
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LoginModal({ onClose, onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -2039,27 +1424,47 @@ function LoginModal({ onClose, onLogin }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+      <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl border border-slate-100">
         <div className="mb-4 flex items-center gap-2">
-          <Lock size={18} className="text-blue-700" />
-          <h3 className="text-base font-bold text-slate-800">Login EM Viable</h3>
+          <Lock size={18} className="text-rose-700" />
+          <h3 className="text-base font-bold text-slate-800">Login EM Non Viable</h3>
         </div>
-        <form onSubmit={submit}>
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Username</label>
-          <input autoFocus type="text" value={username} onChange={(ev) => setUsername(ev.target.value)}
-            className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Password</label>
-          <input type="password" value={password} onChange={(ev) => setPassword(ev.target.value)}
-            className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
-          {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
+        <form onSubmit={submit} className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Username</label>
+            <input
+              autoFocus
+              type="text"
+              value={username}
+              onChange={(ev) => setUsername(ev.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-rose-700 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(ev) => setPassword(ev.target.value)}
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-rose-700 focus:outline-none"
+            />
+          </div>
+          {error && <p className="rounded-xl bg-red-50 p-2.5 text-xs text-red-600 border border-red-200">{error}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-600"
+            >
               Batal
             </button>
-            <button type="submit" disabled={submitting || !username || !password}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
-              {submitting ? <Loader2 size={14} className="animate-spin" /> : null} Masuk
+            <button
+              type="submit"
+              disabled={submitting || !username || !password}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-900 px-4 py-1.5 text-xs font-semibold text-white hover:bg-rose-950 disabled:opacity-60 shadow-sm"
+            >
+              {submitting ? <Loader2 size={13} className="animate-spin" /> : null} Masuk
             </button>
           </div>
         </form>
@@ -2068,145 +1473,2356 @@ function LoginModal({ onClose, onLogin }) {
   );
 }
 
-function ProfileModal({ session, onClose }) {
-  const [showChangePw, setShowChangePw] = useState(false);
-  const [oldPassword, setOldPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+/* =========================================================================
+   11. HALAMAN FASILITAS INTEGRATED
+   ========================================================================= */
+function FacilityIntegratedPage({ session, facilityKey, month, setMonth, setView, initialDate }) {
+  const cfg = FACILITIES.find((f) => f.key === facilityKey) || FACILITIES[0];
+  const canInput = hasFacilityAccess(session, "Staff", cfg);
+  const canApproveSPV = hasFacilityAccess(session, "Supervisor", cfg);
+  const canApproveOPR = canInput || canApproveSPV;
+  
+  const canDraftQA = hasAccess(session, "Supervisor", "QA");
+  const canFinalQA = hasAccess(session, "Manager", "QA");
 
-  const submit = async (ev) => {
-    ev.preventDefault();
-    setError("");
-    if (newPassword.length < 6) { setError("Password baru minimal 6 karakter."); return; }
-    if (newPassword !== confirmPassword) { setError("Konfirmasi password baru tidak cocok."); return; }
-    setSubmitting(true);
-    try {
-      const res = await apiChangePassword(session.token, oldPassword, newPassword);
-      if (res.error) { setError(res.error); return; }
-      setSuccess(true);
-      setOldPassword(""); setNewPassword(""); setConfirmPassword("");
-    } catch (err) {
-      setError(err.message || "Gagal mengubah password.");
-    } finally {
-      setSubmitting(false);
+  const [selectedDate, setSelectedDate] = useState(initialDate || todayStr());
+  const [rooms, setRooms] = useState([]);
+  const [monthEntries, setMonthEntries] = useState([]);
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [busyRow, setBusyRow] = useState(null);
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
+  const [lastSavedTime, setLastSavedTime] = useState("");
+
+  const [activeRoomNames, setActiveRoomNames] = useState([]);
+  const [gridValues, setGridValues] = useState({});
+
+  const [pendahuluan, setPendahuluan] = useState("");
+  const [kesimpulanUmum, setKesimpulanUmum] = useState("");
+  const [perParameter, setPerParameter] = useState({ suhu: "", rh: "", dpg: "" });
+  const narasiRef = useRef(null);
+  const [generating, setGenerating] = useState(false);
+
+  /* Modal Denah State */
+  const [showDenahModal, setShowDenahModal] = useState(false);
+  const [denahScale, setDenahScale] = useState(1);
+  const [denahPosition, setDenahPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const denahSrc = DENAH_MAP[facilityKey] || null;
+
+  const handleResetZoom = () => {
+    setDenahScale(1);
+    setDenahPosition({ x: 0, y: 0 });
+  };
+
+  const handleZoomIn = () => setDenahScale((prev) => Math.min(prev + 0.3, 5));
+  const handleZoomOut = () => setDenahScale((prev) => Math.max(prev - 0.3, 0.6));
+
+  const handleMouseDown = (e) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - denahPosition.x, y: e.clientY - denahPosition.y });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDragging) return;
+    setDenahPosition({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
+
+  const handleWheel = (e) => {
+    e.preventDefault();
+    if (e.deltaY < 0) {
+      setDenahScale((prev) => Math.min(prev + 0.2, 5));
+    } else {
+      setDenahScale((prev) => Math.max(prev - 0.2, 0.6));
     }
   };
 
+  const [narrativeMemory, setNarrativeMemory] = useState({});
+  const currentMemKey = `${facilityKey}_${selectedDate}`;
+
+  useEffect(() => {
+    if (initialDate) {
+      setSelectedDate(initialDate);
+    }
+  }, [initialDate]);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3500);
+  };
+
+  const handleAutoResize = (e) => {
+    const target = e.target;
+    target.style.height = "auto";
+    target.style.height = `${target.scrollHeight}px`;
+  };
+
+  useEffect(() => {
+    const textareas = narasiRef.current ? narasiRef.current.querySelectorAll("textarea") : [];
+    textareas.forEach((el) => {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    });
+  }, [pendahuluan, kesimpulanUmum, perParameter]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const [roomRes, entryRes] = await Promise.all([
+        fetchMaster(facilityKey),
+        fetchEntries(facilityKey, month),
+      ]);
+      const roomList = Array.isArray(roomRes) ? roomRes : roomRes?.rooms || [];
+      const entryList = Array.isArray(entryRes) ? entryRes : entryRes?.entries || [];
+
+      setRooms(roomList);
+      setMonthEntries(entryList);
+
+      let reportRes = await fetchReport(facilityKey, selectedDate, session?.token, "").catch(() => null);
+      if (!reportRes?.narrative?.pendahuluan && !reportRes?.narrative?.kesimpulanUmum) {
+        reportRes = await fetchReport(facilityKey, month, session?.token, selectedDate).catch(() => null);
+      }
+
+      if (reportRes?.narrative?.pendahuluan || reportRes?.narrative?.kesimpulanUmum) {
+        setReport(reportRes);
+        setPendahuluan(reportRes.narrative.pendahuluan || "");
+        setKesimpulanUmum(reportRes.narrative.kesimpulanUmum || "");
+        setPerParameter(reportRes.narrative.perParameter || { suhu: "", rh: "", dpg: "" });
+      } else if (narrativeMemory[currentMemKey]) {
+        const mem = narrativeMemory[currentMemKey];
+        setPendahuluan(mem.pendahuluan || "");
+        setKesimpulanUmum(mem.kesimpulanUmum || "");
+        setPerParameter(mem.perParameter || { suhu: "", rh: "", dpg: "" });
+      } else {
+        setReport(null);
+        setPendahuluan("");
+        setKesimpulanUmum("");
+        setPerParameter({ suhu: "", rh: "", dpg: "" });
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [facilityKey, month, selectedDate, session?.token, currentMemKey, narrativeMemory]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    if (!rooms || rooms.length === 0) return;
+
+    const existingRoomsToday = Array.from(
+      new Set((monthEntries || []).filter((e) => e?.tanggal === selectedDate).map((e) => e?.roomName))
+    ).filter(Boolean);
+
+    setActiveRoomNames(existingRoomsToday);
+
+    const initialGrid = {};
+    rooms.forEach((r) => {
+      if (!r?.name) return;
+      initialGrid[r.name] = {
+        "08:00": { suhu: "", rh: "", dpg: "", opr: "", spv: "" },
+        "13:00": { suhu: "", rh: "", dpg: "", opr: "", spv: "" },
+      };
+      SESI.forEach((jam) => {
+        PARAM_DEFS.forEach((p) => {
+          if (!r.required?.[p.key]) initialGrid[r.name][jam][p.key] = "-";
+        });
+      });
+    });
+
+    (monthEntries || []).filter((e) => e?.tanggal === selectedDate).forEach((e) => {
+      if (initialGrid[e.roomName] && initialGrid[e.roomName][e.jam]) {
+        const rObj = rooms.find((r) => r.name === e.roomName);
+        initialGrid[e.roomName][e.jam] = {
+          suhu: e.suhu ?? (rObj?.required?.suhu ? "" : "-"),
+          rh: e.rh ?? (rObj?.required?.rh ? "" : "-"),
+          dpg: e.dpg ?? (rObj?.required?.dpg ? "" : "-"),
+          opr: e.opr || "",
+          spv: e.spv || "",
+        };
+      }
+    });
+
+    setGridValues(initialGrid);
+  }, [selectedDate, monthEntries, rooms]);
+
+  function handleAddRoom(roomName) {
+    if (!roomName || activeRoomNames.includes(roomName)) return;
+    setActiveRoomNames((prev) => [roomName, ...prev]);
+  }
+
+  function handleRemoveActiveRoom(roomName) {
+    setActiveRoomNames((prev) => prev.filter((name) => name !== roomName));
+  }
+
+  function handleCellChange(roomName, jam, field, val) {
+    const normalized = field === "suhu" || field === "rh" || field === "dpg" ? val.replace(/\./g, ",") : val;
+    setGridValues((prev) => ({
+      ...prev,
+      [roomName]: {
+        ...prev[roomName],
+        [jam]: {
+          ...prev[roomName][jam],
+          [field]: normalized,
+        },
+      },
+    }));
+  }
+
+  function buildTodayPayload() {
+    const todayRows = [];
+    activeRoomNames.forEach((rName) => {
+      const rObj = (rooms || []).find((r) => r?.name === rName);
+      SESI.forEach((jam) => {
+        const v = gridValues[rName]?.[jam] || {};
+        const anyFilled = PARAM_DEFS.some((p) => v[p.key] && v[p.key] !== "-");
+        if (anyFilled) {
+          const sVal = !rObj?.required?.suhu ? v.suhu || "-" : v.suhu;
+          const rVal = !rObj?.required?.rh ? v.rh || "-" : v.rh;
+          const dVal = !rObj?.required?.dpg ? v.dpg || "-" : v.dpg;
+
+          todayRows.push({
+            id: `${rName}|${selectedDate}|${jam}`,
+            tanggal: selectedDate,
+            jam,
+            roomName: rName,
+            persyaratanKey: rObj?.persyaratanKey || "",
+            suhu: sVal === "" ? null : sVal,
+            rh: rVal === "" ? null : rVal,
+            dpg: dVal === "" ? null : dVal,
+            opr: v.opr || "",
+            spv: v.spv || "",
+          });
+        }
+      });
+    });
+    return todayRows;
+  }
+
+  async function handleSaveDataOnly() {
+    setSaving(true);
+    setError("");
+    try {
+      const todayRows = buildTodayPayload();
+      const otherRows = (monthEntries || []).filter((e) => e?.tanggal !== selectedDate);
+      await apiSaveEntries(facilityKey, month, otherRows.concat(todayRows), session?.token);
+      await loadData();
+      showToast("Data pengukuran harian berhasil disimpan.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleApproveOprBatch() {
+    setSaving(true);
+    setError("");
+    try {
+      const todayRows = buildTodayPayload();
+      if (todayRows.length === 0) throw new Error("Belum ada nilai yang diisi pada tanggal ini.");
+
+      const otherRows = (monthEntries || []).filter((e) => e?.tanggal !== selectedDate);
+      await apiSaveEntries(facilityKey, month, otherRows.concat(todayRows), session?.token);
+
+      const uniqueRooms = Array.from(new Set(todayRows.map((r) => r.roomName)));
+      for (const rName of uniqueRooms) {
+        await apiApproveOpr(facilityKey, selectedDate, rName, session?.token);
+      }
+      await loadData();
+      showToast("Approval Operator berhasil disimpan.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleApproveSpvBatch() {
+    setSaving(true);
+    setError("");
+    try {
+      const todayRows = buildTodayPayload();
+      if (todayRows.length === 0) throw new Error("Tidak ada data ruangan untuk di-approve SPV.");
+
+      const otherRows = (monthEntries || []).filter((e) => e?.tanggal !== selectedDate);
+      await apiSaveEntries(facilityKey, month, otherRows.concat(todayRows), session?.token);
+
+      const uniqueRooms = Array.from(new Set(todayRows.map((r) => r.roomName)));
+      for (const rName of uniqueRooms) {
+        const rows = todayRows.filter((r) => r.roomName === rName);
+        const oprEmpty = rows.some((r) => !r.opr);
+        if (oprEmpty) {
+          await apiApproveOpr(facilityKey, selectedDate, rName, session?.token).catch(() => {});
+        }
+      }
+
+      await apiApproveDay(facilityKey, selectedDate, session?.token);
+      await loadData();
+      showToast("Approval SPV berhasil, seluruh data tanggal ini terkunci.");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleApproveOprSingle(roomName) {
+    setBusyRow(roomName + "|opr");
+    setError("");
+    try {
+      const todayRows = buildTodayPayload();
+      const otherRows = (monthEntries || []).filter((e) => e?.tanggal !== selectedDate);
+      await apiSaveEntries(facilityKey, month, otherRows.concat(todayRows), session?.token);
+      await apiApproveOpr(facilityKey, selectedDate, roomName, session?.token);
+      await loadData();
+      showToast(`Approval Operator ruangan ${roomName} berhasil.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyRow(null);
+    }
+  }
+
+  async function handleApproveSpvSingle(roomName) {
+    setBusyRow(roomName + "|spv");
+    setError("");
+    try {
+      const todayRows = buildTodayPayload();
+      const otherRows = (monthEntries || []).filter((e) => e?.tanggal !== selectedDate);
+      await apiSaveEntries(facilityKey, month, otherRows.concat(todayRows), session?.token);
+      await apiApproveSpv(facilityKey, selectedDate, roomName, session?.token);
+      await loadData();
+      showToast(`Approval SPV ruangan ${roomName} berhasil.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyRow(null);
+    }
+  }
+
+  async function handleSaveReport() {
+    setError("");
+    setSaving(true);
+    try {
+      const payload = { pendahuluan, kesimpulanUmum, perParameter };
+
+      setNarrativeMemory((prev) => ({
+        ...prev,
+        [currentMemKey]: payload,
+      }));
+
+      await apiSaveReport(
+        facilityKey,
+        selectedDate,
+        payload,
+        session?.token,
+        ""
+      );
+
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
+      setLastSavedTime(timeStr);
+      showToast(`Narasi evaluasi harian (${selectedDate}) berhasil disimpan!`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleGenerateAI() {
+    setGenerating(true);
+    setError("");
+    try {
+      const todayRows = buildTodayPayload();
+      const otherRows = (monthEntries || []).filter((e) => e?.tanggal !== selectedDate);
+      const combinedEntries = [...otherRows, ...todayRows];
+      const currentDayRooms = (rooms || []).filter((r) => activeRoomNames.includes(r.name));
+
+      if (todayRows.length === 0 && currentDayEntriesMemo.length === 0) {
+        showToast("Belum ada data pengukuran yang diisi pada tanggal ini.");
+        setGenerating(false);
+        return;
+      }
+
+      const facilityStats = buildFacilityStats({
+        facilityLabel: `${cfg.label} (Harian: ${selectedDate})`,
+        monthLabel: fullDateID(selectedDate),
+        entries: combinedEntries,
+        rooms: currentDayRooms.length > 0 ? currentDayRooms : rooms,
+      });
+
+      let narrative;
+      try {
+        narrative = await generateNarrative({
+          facilityLabel: `${cfg.label} (Harian: ${selectedDate})`,
+          monthLabel: fullDateID(selectedDate),
+          stats: facilityStats?.stats || {},
+        });
+      } catch (aiErr) {
+        narrative = generateLocalNarrative({
+          facilityLabel: `${cfg.label} (Harian: ${selectedDate})`,
+          monthLabel: fullDateID(selectedDate),
+          entries: combinedEntries,
+          rooms: currentDayRooms.length > 0 ? currentDayRooms : rooms,
+        });
+        showToast("Menggunakan draf narasi evaluator lokal.");
+      }
+
+      if (narrative) {
+        const nextPendahuluan = narrative.pendahuluan || "";
+        const nextPerParam = narrative.perParameter || { suhu: "", rh: "", dpg: "" };
+        const nextKesimpulan = narrative.kesimpulanUmum || "";
+
+        setPendahuluan(nextPendahuluan);
+        setPerParameter(nextPerParam);
+        setKesimpulanUmum(nextKesimpulan);
+
+        setNarrativeMemory((prev) => ({
+          ...prev,
+          [currentMemKey]: {
+            pendahuluan: nextPendahuluan,
+            perParameter: nextPerParam,
+            kesimpulanUmum: nextKesimpulan,
+          },
+        }));
+
+        showToast("Draf narasi harian berhasil dibuat!");
+      }
+    } catch (err) {
+      setError(err.message || "Gagal membuat narasi AI harian.");
+      showToast("Terjadi kendala saat generate narasi AI.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleDikaji() {
+    try {
+      await apiApproveDikaji(facilityKey, selectedDate, session?.token, "");
+      await loadData();
+      showToast("Status 'Dikaji Oleh' berhasil disetujui!");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleMengetahui() {
+    try {
+      await apiApproveMengetahui(facilityKey, selectedDate, session?.token, "");
+      await loadData();
+      showToast("Status 'Mengetahui' Final berhasil disetujui!");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  const currentDayEntriesMemo = useMemo(() => {
+    return (monthEntries || []).filter((e) => e?.tanggal === selectedDate);
+  }, [monthEntries, selectedDate]);
+
+  const currentLevel = facilityOverallLevel(monthEntries);
+  const isFinalApproved = !!report?.signoff?.diperiksa?.nama;
+
+  const roomStatusToday = useMemo(() => {
+    const map = {};
+    (rooms || []).forEach((r) => {
+      const rows = currentDayEntriesMemo.filter((e) => e?.roomName === r?.name);
+      if (rows.length === 0) {
+        map[r.name] = "empty";
+      } else if (rows.every((e) => !!e.spv)) {
+        map[r.name] = "spv";
+      } else if (rows.some((e) => !!e.opr)) {
+        map[r.name] = "opr";
+      } else {
+        map[r.name] = "filled";
+      }
+    });
+    return map;
+  }, [rooms, currentDayEntriesMemo]);
+
+  const isFacilityFullySpvApproved = useMemo(() => {
+    if (!rooms || rooms.length === 0) return false;
+    return rooms.every((r) => roomStatusToday[r.name] === "spv");
+  }, [rooms, roomStatusToday]);
+
+  const hasUnapprovedRoomsInActive = useMemo(() => {
+    return (activeRoomNames || []).some((rName) => roomStatusToday[rName] !== "spv");
+  }, [activeRoomNames, roomStatusToday]);
+
+  const unselectedRooms = (rooms || []).filter((r) => !activeRoomNames.includes(r.name));
+
+  const activeDistinctLimits = useMemo(() => {
+    const map = {};
+    (activeRoomNames || []).forEach((rName) => {
+      const rObj = (rooms || []).find((r) => r?.name === rName);
+      if (rObj && rObj.persyaratanKey) {
+        map[rObj.persyaratanKey] = rObj.limits;
+      }
+    });
+    return map;
+  }, [activeRoomNames, rooms]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
-        <div className="mb-4 flex items-center gap-2">
-          <User size={18} className="text-blue-700" />
-          <h3 className="text-base font-bold text-slate-800">Profil Saya</h3>
+    <div className="space-y-6">
+      {toast && (
+        <div className="fixed top-20 right-6 z-50 flex items-center gap-2.5 bg-zinc-900/95 text-white border border-emerald-500/60 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md animate-fade-in text-xs font-semibold">
+          <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+          <span>{toast}</span>
         </div>
+      )}
 
-        <div className="mb-4 space-y-1.5 rounded-lg bg-slate-50 px-4 py-3 text-sm">
-          <p className="flex justify-between"><span className="text-slate-500">Username</span> <span className="font-medium text-slate-700">{session.username}</span></p>
-          <p className="flex justify-between"><span className="text-slate-500">Nama Lengkap</span> <span className="font-medium text-slate-700">{session.nama}</span></p>
-          <p className="flex justify-between"><span className="text-slate-500">Jabatan</span> <span className="font-medium text-slate-700">{session.role}</span></p>
-          <p className="flex justify-between"><span className="text-slate-500">Departemen</span> <span className="font-medium text-slate-700">{session.departemen || "-"}</span></p>
+      <div className="no-print flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
+        <button
+          onClick={() => setView({ page: "dashboard" })}
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2 text-xs font-bold transition shadow-2xs"
+        >
+          <ArrowLeft size={14} className="text-rose-900" /> Kembali ke Dashboard
+        </button>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {denahSrc && (
+            <button
+              type="button"
+              onClick={() => setShowDenahModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100/80 border border-indigo-200/80 text-indigo-950 px-3.5 py-2 text-xs font-bold transition shadow-2xs"
+            >
+              <Map size={14} className="text-indigo-700" /> Lihat Denah Ruangan
+            </button>
+          )}
+          {canDraftQA && (
+            <button
+              onClick={() => setView({ page: "pengkajian", facility: facilityKey, room: "" })}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-rose-900 to-rose-950 hover:from-rose-950 hover:to-black text-white px-3.5 py-2 text-xs font-semibold shadow-xs transition"
+            >
+              <ClipboardList size={14} className="text-rose-300" /> Pengkajian QA Global
+            </button>
+          )}
+          {rooms && rooms.length > 0 && (
+            <button
+              onClick={() => setView({ page: "formulir", facility: facilityKey, room: rooms[0]?.name, bulan: month })}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-50 hover:bg-rose-100/80 border border-rose-200/80 text-rose-950 px-3.5 py-2 text-xs font-bold transition shadow-2xs"
+            >
+              <FileCheck2 size={14} className="text-rose-800" /> Formulir Bulanan (FM.QA.024/R11)
+            </button>
+          )}
+          <button
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-black text-white px-3.5 py-2 text-xs font-semibold transition shadow-xs"
+          >
+            <Printer size={14} className="text-slate-300" /> Cetak Harian
+          </button>
         </div>
+      </div>
 
-        {!showChangePw ? (
-          <div className="flex justify-between gap-2">
-            <button onClick={onClose} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
-              Tutup
-            </button>
-            <button onClick={() => setShowChangePw(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800">
-              <Lock size={14} /> Ganti Password
-            </button>
+      {/* KOP HEADER FASILITAS HARIAN */}
+      <div className="overflow-hidden rounded-3xl border border-slate-200/80 print-card shadow-sm">
+        <div className="relative overflow-hidden bg-gradient-to-r from-black via-zinc-950 to-rose-950 px-6 py-4">
+          <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-rose-600/20 blur-3xl" />
+          <div className="relative flex items-start justify-between">
+            <div className="flex items-start gap-4">
+              <img src="/logo-rama.png" alt="Logo" className="h-11 w-11 object-contain brightness-0 invert" />
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-rose-300">
+                  PT. Rama Emerald Multi Sukses — QA
+                </p>
+                <h1 className="text-lg font-bold text-white tracking-tight">
+                  Data Pemantauan &amp; Evaluasi Harian EM Non Viable
+                </h1>
+                <p className="text-xs text-rose-100/90 mt-0.5">
+                  Fasilitas: <span className="font-semibold text-white">{cfg?.label}</span> · Periode:{" "}
+                  <span className="font-semibold text-white">{monthLabelID(month)}</span>
+                </p>
+              </div>
+            </div>
+            <p className="text-right text-[11px] text-rose-200 font-mono">FM.QA.024/R11</p>
           </div>
-        ) : success ? (
-          <div>
-            <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">Password berhasil diubah.</p>
-            <div className="flex justify-end">
-              <button onClick={onClose} className="rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800">
-                Tutup
+        </div>
+        <div className="flex items-center justify-between bg-white px-6 py-2 border-t border-slate-100 text-xs">
+          <span className="text-slate-400">Status Fasilitas:</span>
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 font-bold"
+            style={{ background: levelStyle(currentLevel).bg, color: levelStyle(currentLevel).color }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: levelStyle(currentLevel).dot }} />
+            {levelStyle(currentLevel).label}
+          </span>
+        </div>
+      </div>
+
+      {error && <p className="p-3.5 bg-red-50 text-red-600 text-xs rounded-2xl border border-red-200">{error}</p>}
+
+      <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-xs space-y-4 print-card avoid-break">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3.5">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs font-bold text-slate-700">Tanggal:</label>
+              <input
+                type="date"
+                value={selectedDate}
+                max={todayStr()}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="border rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-rose-700 bg-slate-50"
+              />
+              <button
+                onClick={() => setSelectedDate(todayStr())}
+                className="text-xs bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-xl font-medium text-slate-600 no-print transition"
+              >
+                Hari Ini
               </button>
             </div>
+
+            {canInput && unselectedRooms.length > 0 && (
+              <div className="flex items-center gap-2 no-print">
+                <select
+                  value=""
+                  onChange={(e) => handleAddRoom(e.target.value)}
+                  className="border border-rose-300 bg-rose-50/50 hover:bg-rose-50 rounded-xl px-3 py-1.5 text-xs text-rose-950 font-semibold outline-none transition"
+                >
+                  <option value="">+ Tambah Ruangan...</option>
+                  {unselectedRooms.map((r) => {
+                    const st = roomStatusToday[r.name];
+                    const labelSuffix =
+                      st === "spv" ? " ✓ disetujui" : st === "opr" ? " • diapprove OPR" : st === "filled" ? " • terisi" : "";
+                    return (
+                      <option key={r.code + r.name} value={r.name}>
+                        {r.code} — {r.name} ({r.persyaratanKey || "—"}){labelSuffix}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+
+            {isFacilityFullySpvApproved && (
+              <span className="inline-flex items-center gap-1 text-[11px] bg-rose-50 text-rose-800 font-semibold px-2.5 py-1 rounded-xl border border-rose-200">
+                <Lock size={12} /> Seluruh Ruangan Terkunci (Disetujui SPV)
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 no-print">
+            {canInput && hasUnapprovedRoomsInActive && (
+              <>
+                <button
+                  onClick={handleSaveDataOnly}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 transition"
+                >
+                  {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Simpan Draf
+                </button>
+                {canApproveOPR && (
+                  <button
+                    onClick={handleApproveOprBatch}
+                    disabled={saving || activeRoomNames.length === 0}
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm disabled:opacity-50 transition"
+                  >
+                    <CheckCheck size={14} /> Approve OPR (Semua)
+                  </button>
+                )}
+              </>
+            )}
+            {canApproveSPV && hasUnapprovedRoomsInActive && (
+              <button
+                onClick={handleApproveSpvBatch}
+                disabled={saving || activeRoomNames.length === 0}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-xl bg-rose-900 hover:bg-rose-950 text-white shadow-sm disabled:opacity-50 transition"
+              >
+                <FileCheck2 size={14} /> Approve SPV &amp; Kunci (Semua)
+              </button>
+            )}
+          </div>
+        </div>
+
+        {activeRoomNames.length === 0 ? (
+          <div className="p-8 text-center bg-slate-50/80 rounded-2xl border border-dashed border-slate-200 text-slate-500 text-xs space-y-1.5">
+            <p className="font-bold text-slate-700">Belum ada ruangan yang dipilih pada tanggal {selectedDate}.</p>
+            <p className="text-slate-400">
+              Silakan klik dropdown <b>"+ Tambah Ruangan..."</b> di atas untuk mulai mengisi data ruangan.
+            </p>
           </div>
         ) : (
-          <form onSubmit={submit}>
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Password Lama</label>
-            <input autoFocus type="password" value={oldPassword} onChange={(ev) => setOldPassword(ev.target.value)}
-              className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Password Baru</label>
-            <input type="password" value={newPassword} onChange={(ev) => setNewPassword(ev.target.value)}
-              className="mb-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Konfirmasi Password Baru</label>
-            <input type="password" value={confirmPassword} onChange={(ev) => setConfirmPassword(ev.target.value)}
-              className="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-400 focus:outline-none" />
-            {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
-            <div className="flex justify-between gap-2">
-              <button type="button" onClick={() => { setShowChangePw(false); setError(""); }}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50">
-                Kembali
+          <div className="overflow-x-auto print:overflow-visible">
+            <table className="w-full text-xs print:table-fixed">
+              <thead>
+                <tr className="bg-slate-50 text-slate-600 border-b">
+                  <th className="px-3 py-2 text-left min-w-[170px] print:w-40">RUANGAN</th>
+                  <th className="px-2 py-2 text-center w-28">PERSYARATAN</th>
+                  <th className="px-2 py-2 text-center w-14">JAM</th>
+                  <th className="px-2 py-2 text-center w-20">SUHU (°C)</th>
+                  <th className="px-2 py-2 text-center w-20">RH (%)</th>
+                  <th className="px-2 py-2 text-center w-20">DPG (Pa)</th>
+                  <th className="px-2 py-2 text-center w-28">OPR (TTD)</th>
+                  <th className="px-2 py-2.5 text-center w-28">SPV (TTD)</th>
+                  <th className="px-2 py-2.5 text-center w-10 no-print">AKSI</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {activeRoomNames.map((rName) => {
+                  const rObj = (rooms || []).find((r) => r?.name === rName);
+                  if (!rObj) return null;
+                  const st = roomStatusToday[rName];
+                  const labelSuffix =
+                    st === "spv" ? "✓ Disetujui SPV" : st === "opr" ? "• Diapprove OPR" : st === "filled" ? "• Terisi" : "";
+
+                  const isLocked = st === "spv";
+
+                  return SESI.map((jam, jamIdx) => {
+                    const v = gridValues[rName]?.[jam] || {};
+                    const sLvl = liveLevelFor(v.suhu, rObj.limits?.suhu, "suhu");
+                    const rLvl = liveLevelFor(v.rh, rObj.limits?.rh, "rh");
+                    const dLvl = liveLevelFor(v.dpg, rObj.limits?.dpg, "dpg");
+
+                    return (
+                      <tr key={rObj.code + jam} className={jamIdx === 0 ? "border-t border-slate-200" : "bg-slate-50/30"}>
+                        {jamIdx === 0 ? (
+                          <>
+                            <td rowSpan={2} className="px-3 py-1.5 align-middle border-r border-slate-100">
+                              <div className="font-bold text-slate-800 text-xs">
+                                {rObj.code} — {rObj.name}
+                              </div>
+                              {labelSuffix && (
+                                <span
+                                  className={`inline-block mt-0.5 text-[9px] font-medium px-2 py-0.2 rounded-full ${
+                                    st === "spv"
+                                      ? "bg-rose-50 text-rose-800"
+                                      : st === "opr"
+                                      ? "bg-emerald-50 text-emerald-800"
+                                      : "bg-slate-100 text-slate-600"
+                                  }`}
+                                >
+                                  {labelSuffix}
+                                </span>
+                              )}
+                            </td>
+                            <td rowSpan={2} className="px-2 py-1.5 text-center align-middle border-r border-slate-100">
+                              <span className="inline-block bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-lg text-[10px] border border-slate-200">
+                                {rObj.persyaratanKey || "—"}
+                              </span>
+                            </td>
+                          </>
+                        ) : null}
+                        <td className="px-2 py-1.5 text-center font-medium text-slate-500">{jam}</td>
+                        <td className="px-2 py-1.5 text-center">
+                          <input
+                            value={v.suhu ?? ""}
+                            onChange={(e) => handleCellChange(rName, jam, "suhu", e.target.value)}
+                            placeholder=""
+                            disabled={isLocked || !canInput}
+                            className="w-14 text-center border rounded-lg px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-rose-700 disabled:bg-slate-50 font-medium text-xs shadow-2xs"
+                            style={{
+                              background: v.suhu && v.suhu !== "-" ? levelStyle(sLvl).bg : undefined,
+                              color: v.suhu && v.suhu !== "-" ? levelStyle(sLvl).color : undefined,
+                            }}
+                          />
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <input
+                            value={v.rh ?? ""}
+                            onChange={(e) => handleCellChange(rName, jam, "rh", e.target.value)}
+                            placeholder={rObj.required?.rh ? "" : "N/A"}
+                            disabled={isLocked || !rObj.required?.rh || !canInput}
+                            className="w-14 text-center border rounded-lg px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-rose-700 disabled:bg-slate-50 font-medium text-xs shadow-2xs"
+                            style={{
+                              background: v.rh && v.rh !== "-" ? levelStyle(rLvl).bg : undefined,
+                              color: v.rh && v.rh !== "-" ? levelStyle(rLvl).color : undefined,
+                            }}
+                          />
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <input
+                            value={v.dpg ?? ""}
+                            onChange={(e) => handleCellChange(rName, jam, "dpg", e.target.value)}
+                            placeholder={rObj.required?.dpg ? "" : "N/A"}
+                            disabled={isLocked || !rObj.required?.dpg || !canInput}
+                            className="w-14 text-center border rounded-lg px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-rose-700 disabled:bg-slate-50 font-medium text-xs shadow-2xs"
+                            style={{
+                              background: v.dpg && v.dpg !== "-" ? levelStyle(dLvl).bg : undefined,
+                              color: v.dpg && v.dpg !== "-" ? levelStyle(dLvl).color : undefined,
+                            }}
+                          />
+                        </td>
+
+                        <td className="px-2 py-1.5 text-center text-slate-600">
+                          {v.opr ? (
+                            <div className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 px-1.5 py-0.5 rounded-lg border border-emerald-200">
+                              <span className="font-medium text-[9.5px] truncate max-w-[60px]">{v.opr}</span>
+                              <VerifyQR
+                                type="harian"
+                                facility={facilityKey}
+                                period={selectedDate}
+                                roomName={rName}
+                                jam={jam}
+                                signerRole="OPR"
+                                signerName={v.opr}
+                                size={30}
+                              />
+                            </div>
+                          ) : canApproveOPR && !isLocked ? (
+                            <button
+                              onClick={() => handleApproveOprSingle(rName)}
+                              disabled={busyRow === rName + "|opr"}
+                              className="no-print inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs disabled:opacity-50 transition"
+                            >
+                              {busyRow === rName + "|opr" ? (
+                                <Loader2 size={10} className="animate-spin" />
+                              ) : (
+                                <CheckCircle2 size={10} />
+                              )}
+                              Approve
+                            </button>
+                          ) : (
+                            <span className="text-slate-300 italic text-[11px]">—</span>
+                          )}
+                        </td>
+
+                        <td className="px-2 py-1.5 text-center text-slate-600">
+                          {v.spv ? (
+                            <div className="inline-flex items-center gap-1 bg-rose-50 text-rose-900 px-1.5 py-0.5 rounded-lg border border-rose-200">
+                              <span className="font-medium text-[9.5px] truncate max-w-[60px]">{v.spv}</span>
+                              <VerifyQR
+                                type="harian"
+                                facility={facilityKey}
+                                period={selectedDate}
+                                roomName={rName}
+                                jam={jam}
+                                signerRole="SPV"
+                                signerName={v.spv}
+                                size={30}
+                              />
+                            </div>
+                          ) : canApproveSPV && !isLocked ? (
+                            <button
+                              onClick={() => handleApproveSpvSingle(rName)}
+                              disabled={busyRow === rName + "|spv"}
+                              className="no-print inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-semibold rounded-lg bg-rose-900 hover:bg-rose-950 text-white shadow-xs disabled:opacity-50 transition"
+                            >
+                              {busyRow === rName + "|spv" ? (
+                                <Loader2 size={10} className="animate-spin" />
+                              ) : (
+                                <FileCheck2 size={10} />
+                              )}
+                              Approve
+                            </button>
+                          ) : (
+                            <span className="text-slate-300 italic text-[11px]">—</span>
+                          )}
+                        </td>
+
+                        {jamIdx === 0 ? (
+                          <td rowSpan={2} className="px-2 py-1.5 text-center align-middle no-print">
+                            {!isLocked && (
+                              <button
+                                onClick={() => handleRemoveActiveRoom(rName)}
+                                className="text-slate-400 hover:text-red-600 p-1 transition"
+                                title="Hapus baris ini"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </td>
+                        ) : null}
+                      </tr>
+                    );
+                  });
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* SECTION 2: CARD PERSYARATAN & LIMIT */}
+      {Object.keys(activeDistinctLimits).length > 0 && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 p-4 shadow-xs space-y-2.5 print-card avoid-break">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+            Persyaratan &amp; Batas Limit (Jenis Limit Terpakai)
+          </h3>
+          <div className="overflow-x-auto print:overflow-visible">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 border-b">
+                  <th className="px-3 py-1">KODE / PERSYARATAN</th>
+                  <th className="px-3 py-1">PARAMETER</th>
+                  <th className="px-3 py-1">SYARAT</th>
+                  <th className="px-3 py-1">ALERT LIMIT</th>
+                  <th className="px-3 py-1">ACTION LIMIT</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {Object.entries(activeDistinctLimits).map(([pKey, limits]) => {
+                  return PARAM_DEFS.map((p) => {
+                    const lim = limits?.[p.key];
+                    if (!lim) return null;
+                    const allNull = [
+                      lim.syaratL,
+                      lim.syaratU,
+                      lim.alertL,
+                      lim.alertU,
+                      lim.actionL,
+                      lim.actionU,
+                    ].every((x) => toNumberSafe(x) === null);
+                    if (allNull) return null;
+                    const isDpg = p.key === "dpg";
+
+                    return (
+                      <tr key={pKey + p.key}>
+                        <td className="px-3 py-1 font-bold text-slate-800">{pKey}</td>
+                        <td className="px-3 py-1 font-semibold text-slate-700">{p.label}</td>
+                        <td className="px-3 py-1 text-slate-800">
+                          {formatRange(lim.syaratL, lim.syaratU, p.unit, isDpg)}
+                        </td>
+                        <td className="px-3 py-1 text-amber-700">
+                          {formatRange(lim.alertL, lim.alertU, p.unit, isDpg)}
+                        </td>
+                        <td className="px-3 py-1 text-orange-700">
+                          {formatRange(lim.actionL, lim.actionU, p.unit, isDpg)}
+                        </td>
+                      </tr>
+                    );
+                  });
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 pt-0.5 text-[10px] text-slate-500">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" /> Terkendali
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-amber-500" /> Alert
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-orange-500" /> Action
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-red-500" /> Melebihi Syarat
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 3: GRAFIK CROSS-SECTIONAL */}
+      <div className="space-y-2.5">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+          Grafik Perbandingan Ruangan Terisi ({selectedDate})
+        </h2>
+        <div className="space-y-2.5">
+          <DayParamChart
+            activeRoomNames={activeRoomNames}
+            rooms={rooms}
+            currentDayEntries={currentDayEntriesMemo}
+            paramKey="suhu"
+            paramLabel="Suhu"
+            unit="°C"
+          />
+          <DayParamChart
+            activeRoomNames={activeRoomNames}
+            rooms={rooms}
+            currentDayEntries={currentDayEntriesMemo}
+            paramKey="rh"
+            paramLabel="Kelembaban Relatif (RH)"
+            unit="%"
+          />
+          <DayParamChart
+            activeRoomNames={activeRoomNames}
+            rooms={rooms}
+            currentDayEntries={currentDayEntriesMemo}
+            paramKey="dpg"
+            paramLabel="Perbedaan Tekanan (DPG)"
+            unit="Pa"
+          />
+        </div>
+      </div>
+
+      {/* SECTION 4: PEMBAHASAN & NARASI */}
+      <div ref={narasiRef} className="bg-white rounded-3xl border border-slate-200/80 p-4 shadow-xs space-y-3.5 print-card avoid-break">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-2.5">
+          <div>
+            <h2 className="text-sm font-bold text-slate-800">
+              Pembahasan &amp; Narasi Evaluasi Harian ({selectedDate})
+            </h2>
+            <p className="text-[10.5px] text-slate-400">
+              Catatan pemantauan operasional tanggal {selectedDate} mengacu pada Protap POS.QA.025
+            </p>
+          </div>
+          {canDraftQA && !isFinalApproved && (
+            <div className="flex flex-wrap items-center gap-2 no-print">
+              {lastSavedTime && (
+                <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200/60">
+                  ✓ Tersimpan {lastSavedTime}
+                </span>
+              )}
+              <button
+                onClick={handleGenerateAI}
+                disabled={generating}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-900 hover:bg-rose-950 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm disabled:opacity-60 transition"
+              >
+                {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Generate AI
               </button>
-              <button type="submit" disabled={submitting || !oldPassword || !newPassword || !confirmPassword}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
-                {submitting ? <Loader2 size={14} className="animate-spin" /> : null} Simpan Password Baru
+              <button
+                onClick={handleSaveReport}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white transition disabled:opacity-60"
+              >
+                {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Simpan Draf
               </button>
             </div>
-          </form>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-2xs avoid-break">
+          <div className="bg-gradient-to-r from-black via-zinc-950 to-rose-950 px-3.5 py-1.5 flex items-center justify-between">
+            <span className="text-xs font-bold text-white tracking-wide uppercase flex items-center gap-2">
+              <FileSpreadsheet size={13} className="text-rose-400" /> Pendahuluan
+            </span>
+          </div>
+          <div className="p-2.5 bg-white">
+            <textarea
+              value={pendahuluan}
+              onChange={(e) => {
+                setPendahuluan(e.target.value);
+                handleAutoResize(e);
+              }}
+              onFocus={handleAutoResize}
+              disabled={!canDraftQA || isFinalApproved}
+              rows={2}
+              style={{ minHeight: "55px", overflow: "hidden" }}
+              className="no-print w-full border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 outline-none focus:border-rose-700 disabled:bg-slate-50 leading-relaxed resize-none"
+            />
+            <p className="only-print text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">{pendahuluan || "-"}</p>
+          </div>
+        </div>
+
+        {PARAM_DEFS.map((p) => {
+          const PIcon = p.icon || Sparkles;
+          return (
+            <div key={p.key} className="rounded-2xl border border-slate-200 overflow-hidden shadow-2xs avoid-break">
+              <div className="bg-gradient-to-r from-black via-zinc-950 to-rose-950 px-3.5 py-1.5 flex items-center justify-between">
+                <span className="text-xs font-bold text-white tracking-wide uppercase flex items-center gap-2">
+                  <PIcon size={13} className="text-rose-400" /> {p.label} ({p.unit})
+                </span>
+                <span className="text-[9.5px] text-rose-200 font-mono">Hasil, Tren &amp; Kesimpulan</span>
+              </div>
+              <div className="p-2.5 bg-white">
+                <textarea
+                  value={perParameter[p.key] || ""}
+                  onChange={(e) => {
+                    setPerParameter({ ...perParameter, [p.key]: e.target.value });
+                    handleAutoResize(e);
+                  }}
+                  onFocus={handleAutoResize}
+                  disabled={!canDraftQA || isFinalApproved}
+                  rows={2}
+                  style={{ minHeight: "60px", overflow: "hidden" }}
+                  placeholder={`Tulis ulasan hasil, tren, dan kesimpulan untuk parameter ${p.label}...`}
+                  className="no-print w-full border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 outline-none focus:border-rose-700 disabled:bg-slate-50 leading-relaxed resize-none"
+                />
+                <p className="only-print text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
+                  {perParameter[p.key] || "-"}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+
+        <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-2xs avoid-break">
+          <div className="bg-gradient-to-r from-black via-zinc-950 to-rose-950 px-3.5 py-1.5 flex items-center justify-between">
+            <span className="text-xs font-bold text-white tracking-wide uppercase flex items-center gap-2">
+              <CheckCircle2 size={13} /> Kesimpulan Umum
+            </span>
+          </div>
+          <div className="p-2.5 bg-white">
+            <textarea
+              value={kesimpulanUmum}
+              onChange={(e) => {
+                setKesimpulanUmum(e.target.value);
+                handleAutoResize(e);
+              }}
+              onFocus={handleAutoResize}
+              disabled={!canDraftQA || isFinalApproved}
+              rows={2}
+              style={{ minHeight: "55px", overflow: "hidden" }}
+              className="no-print w-full border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 outline-none focus:border-rose-700 disabled:bg-slate-50 leading-relaxed resize-none"
+            />
+            <p className="only-print text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
+              {kesimpulanUmum || "-"}
+            </p>
+          </div>
+        </div>
+
+        <div className="pt-2.5 border-t grid grid-cols-1 sm:grid-cols-2 gap-3 avoid-break">
+          <div className="border rounded-2xl p-3.5 bg-slate-50/50 text-center flex flex-col justify-between min-h-[125px]">
+            <p className="text-[9.5px] font-semibold uppercase tracking-wider text-slate-400">
+              Dikaji Oleh (Supervisor QA)
+            </p>
+            {report?.signoff?.dinilai?.nama ? (
+              <div className="space-y-0.5 my-auto">
+                <div className="flex justify-center">
+                  <VerifyQR
+                    type="pengkajian"
+                    facility={facilityKey}
+                    period={selectedDate}
+                    roomName=""
+                    signerRole="Dikaji Oleh"
+                    signerName={report.signoff.dinilai.nama}
+                    size={42}
+                  />
+                </div>
+                <p className="text-xs font-bold text-slate-800">{report.signoff.dinilai.nama}</p>
+                <p className="text-[9px] text-slate-400">{report.signoff.dinilai.tanggal}</p>
+              </div>
+            ) : (
+              <div className="my-auto space-y-2">
+                <p className="text-xs italic text-slate-400">Belum disetujui</p>
+                {canDraftQA && (
+                  <button
+                    onClick={handleDikaji}
+                    className="no-print px-4 py-1.5 bg-rose-900 hover:bg-rose-950 text-white rounded-xl text-xs font-semibold shadow-xs"
+                  >
+                    Approve "Dikaji Oleh"
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="border rounded-2xl p-3.5 bg-slate-50/50 text-center flex flex-col justify-between min-h-[125px]">
+            <p className="text-[9.5px] font-semibold uppercase tracking-wider text-slate-400">
+              Mengetahui (Manager QA)
+            </p>
+            {report?.signoff?.diperiksa?.nama ? (
+              <div className="space-y-0.5 my-auto">
+                <div className="flex justify-center">
+                  <VerifyQR
+                    type="pengkajian"
+                    facility={facilityKey}
+                    period={selectedDate}
+                    roomName=""
+                    signerRole="Mengetahui"
+                    signerName={report.signoff.diperiksa.nama}
+                    size={42}
+                  />
+                </div>
+                <p className="text-xs font-bold text-slate-800">{report.signoff.diperiksa.nama}</p>
+                <p className="text-[9px] text-slate-400">{report.signoff.diperiksa.tanggal}</p>
+              </div>
+            ) : (
+              <div className="my-auto space-y-2">
+                <p className="text-xs italic text-slate-400">
+                  {report?.signoff?.dinilai?.nama
+                    ? "Menunggu approval Manager QA"
+                    : "Menunggu approval 'Dikaji Oleh' terlebih dahulu"}
+                </p>
+                {canFinalQA && report?.signoff?.dinilai?.nama && (
+                  <button
+                    onClick={handleMengetahui}
+                    className="no-print px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold shadow-xs"
+                  >
+                    Approve Final "Mengetahui"
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {showDenahModal && denahSrc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4 animate-fade-in no-print">
+          <div className="relative max-w-6xl w-full bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-200 flex flex-col h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                  <Map size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">Denah Tata Letak Ruangan — {cfg?.label}</h3>
+                  <p className="text-[11px] text-slate-500">Gunakan scroll/drag untuk zoom hingga 500% dan menggeser denah</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="flex items-center bg-slate-200/80 rounded-xl p-0.5 text-xs font-semibold text-slate-700">
+                  <button
+                    onClick={handleZoomOut}
+                    className="p-1.5 hover:bg-white rounded-lg transition"
+                    title="Zoom Out"
+                  >
+                    <ZoomOut size={15} />
+                  </button>
+                  <span className="px-2 text-[11px] select-none">{Math.round(denahScale * 100)}%</span>
+                  <button
+                    onClick={handleZoomIn}
+                    className="p-1.5 hover:bg-white rounded-lg transition"
+                    title="Zoom In"
+                  >
+                    <ZoomIn size={15} />
+                  </button>
+                  <button
+                    onClick={handleResetZoom}
+                    className="p-1.5 hover:bg-white rounded-lg transition border-l border-slate-300 ml-0.5 text-[10px]"
+                    title="Reset Ukuran"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowDenahModal(false);
+                    handleResetZoom();
+                  }}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-800 hover:bg-slate-200/60 transition"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div
+              className={`flex-1 overflow-hidden p-4 flex items-center justify-center bg-zinc-900/5 select-none relative ${
+                isDragging ? "cursor-grabbing" : "cursor-grab"
+              }`}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onWheel={handleWheel}
+            >
+              <div
+                style={{
+                  transform: `translate(${denahPosition.x}px, ${denahPosition.y}px) scale(${denahScale})`,
+                  transition: isDragging ? "none" : "transform 0.15s ease-out",
+                }}
+                className="max-w-full max-h-full flex items-center justify-center origin-center pointer-events-none"
+              >
+                <img
+                  src={denahSrc}
+                  alt={`Denah Ruangan ${cfg?.label}`}
+                  className="max-w-none w-auto h-auto max-h-[70vh] rounded-xl shadow-md border border-slate-200 bg-white"
+                  draggable={false}
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-3 border-t border-slate-100 bg-white flex items-center justify-between">
+              <span className="text-[11px] text-slate-400">💡 Klik dan tahan mouse untuk menggeser denah</span>
+              <button
+                onClick={() => {
+                  setShowDenahModal(false);
+                  handleResetZoom();
+                }}
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-semibold shadow-xs transition"
+              >
+                Tutup Denah
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* =========================================================================
+   12. HALAMAN PENGKAJIAN QA RESMI (PENGKAJIAN GLOBAL & RUANGAN)
+   ========================================================================= */
+function PengkajianPage({ session, month, setView, initialFacility, initialRoom }) {
+  const [facilityKey, setFacilityKey] = useState(initialFacility || FACILITIES[0].key);
+  const [selectedRoomName, setSelectedRoomName] = useState(initialRoom || "");
+  const [report, setReport] = useState(null);
+  const [pendahuluan, setPendahuluan] = useState("");
+  const [kesimpulanUmum, setKesimpulanUmum] = useState("");
+  const [perParameter, setPerParameter] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
+  const [lastSavedTime, setLastSavedTime] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [rooms, setRooms] = useState([]);
+  const [monthEntries, setMonthEntries] = useState([]);
+
+  const cfg = FACILITIES.find((f) => f.key === facilityKey) || FACILITIES[0];
+  const canDraftQA = hasAccess(session, "Supervisor", "QA");
+  const canFinalQA = hasAccess(session, "Manager", "QA");
+  const narasiRef = useRef(null);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3500);
+  };
+
+  const handleAutoResize = (e) => {
+    const target = e.target;
+    target.style.height = "auto";
+    target.style.height = `${target.scrollHeight}px`;
+  };
+
+  useEffect(() => {
+    const textareas = narasiRef.current ? narasiRef.current.querySelectorAll("textarea") : [];
+    textareas.forEach((el) => {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    });
+  }, [pendahuluan, kesimpulanUmum, perParameter]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [r, roomRes, entryRes] = await Promise.all([
+        fetchReport(facilityKey, month, session?.token, selectedRoomName),
+        fetchMaster(facilityKey),
+        fetchEntries(facilityKey, month),
+      ]);
+      const roomList = Array.isArray(roomRes) ? roomRes : roomRes?.rooms || [];
+      const allEntries = Array.isArray(entryRes) ? entryRes : entryRes?.entries || [];
+
+      setReport(r);
+      if (r?.narrative) {
+        setPendahuluan(r.narrative.pendahuluan || "");
+        setKesimpulanUmum(r.narrative.kesimpulanUmum || "");
+        setPerParameter(r.narrative.perParameter || {});
+      } else {
+        setPendahuluan("");
+        setKesimpulanUmum("");
+        setPerParameter({});
+      }
+      setRooms(roomList);
+      setMonthEntries(
+        selectedRoomName
+          ? (allEntries || []).filter((e) => e?.roomName === selectedRoomName)
+          : allEntries || []
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [facilityKey, month, session?.token, selectedRoomName]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const isFinal = !!report?.signoff?.diperiksa?.nama;
+
+  async function handleSave() {
+    setError("");
+    setSaving(true);
+    try {
+      await apiSaveReport(
+        facilityKey,
+        month,
+        { pendahuluan, kesimpulanUmum, perParameter },
+        session?.token,
+        selectedRoomName
+      );
+      await load();
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
+      setLastSavedTime(timeStr);
+      showToast(
+        selectedRoomName
+          ? `Narasi Pengkajian Ruangan (${selectedRoomName}) berhasil disimpan!`
+          : `Narasi Pengkajian Global Fasilitas (${cfg?.label}) berhasil disimpan!`
+      );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDikaji() {
+    setError("");
+    try {
+      await apiApproveDikaji(facilityKey, month, session?.token, selectedRoomName);
+      await load();
+      showToast("Status 'Dikaji Oleh' berhasil disetujui!");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleMengetahui() {
+    setError("");
+    try {
+      await apiApproveMengetahui(facilityKey, month, session?.token, selectedRoomName);
+      await load();
+      showToast("Status 'Mengetahui' Final berhasil disetujui!");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleGenerateAI() {
+    setGenerating(true);
+    setError("");
+    try {
+      const targetLabel = cfg.label + (selectedRoomName ? ` — ${selectedRoomName}` : "");
+      const facilityStats = buildFacilityStats({
+        facilityLabel: targetLabel,
+        monthLabel: monthLabelID(month),
+        entries: monthEntries,
+        rooms,
+      });
+      let narrative;
+      try {
+        narrative = await generateNarrative({
+          facilityLabel: targetLabel,
+          monthLabel: monthLabelID(month),
+          stats: facilityStats.stats,
+        });
+      } catch (aiErr) {
+        narrative = generateLocalNarrative({
+          facilityLabel: targetLabel,
+          monthLabel: monthLabelID(month),
+          entries: monthEntries,
+          rooms,
+        });
+        showToast("Menggunakan draf evaluator lokal.");
+      }
+      setPendahuluan(narrative.pendahuluan || "");
+      setPerParameter(narrative.perParameter || {});
+      setKesimpulanUmum(narrative.kesimpulanUmum || "");
+      showToast("Draf narasi pengkajian berhasil dibuat!");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  const distinctReportLimits = useMemo(() => {
+    const map = {};
+    const relevantRooms = selectedRoomName
+      ? (rooms || []).filter((r) => r?.name === selectedRoomName)
+      : rooms || [];
+    relevantRooms.forEach((rObj) => {
+      if (rObj && rObj.persyaratanKey) {
+        map[rObj.persyaratanKey] = rObj.limits;
+      }
+    });
+    return map;
+  }, [rooms, selectedRoomName]);
+
+  const roomsMap = useMemo(() => {
+    const map = {};
+    (rooms || []).forEach((r) => {
+      if (r?.name) map[r.name] = r.persyaratanKey || "—";
+    });
+    return map;
+  }, [rooms]);
+
+  const currentLevel = facilityOverallLevel(
+    selectedRoomName ? (monthEntries || []).filter((e) => e?.roomName === selectedRoomName) : monthEntries
+  );
+
+  return (
+    <div className="space-y-6">
+      {toast && (
+        <div className="fixed top-20 right-6 z-50 flex items-center gap-2.5 bg-zinc-900/95 text-white border border-emerald-500/60 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md animate-fade-in text-xs font-semibold">
+          <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+          <span>{toast}</span>
+        </div>
+      )}
+
+      <div className="no-print flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
+        <button
+          onClick={() => setView({ page: "facility", facility: facilityKey })}
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2 text-xs font-bold transition shadow-2xs"
+        >
+          <ArrowLeft size={14} className="text-rose-900" /> Kembali ke {cfg?.label}
+        </button>
+        <button
+          onClick={() => window.print()}
+          className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-black text-white px-3.5 py-2 text-xs font-semibold transition shadow-xs"
+        >
+          <Printer size={14} className="text-slate-300" /> Cetak Pengkajian
+        </button>
+      </div>
+
+      {/* HEADER KOP UTAMA PENGKAJIAN QA */}
+      <div className="overflow-hidden rounded-3xl border border-slate-200/80 print-card shadow-sm">
+        <div className="relative overflow-hidden bg-gradient-to-r from-black via-zinc-950 to-rose-950 px-6 py-4">
+          <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-rose-600/20 blur-3xl" />
+          <div className="relative flex items-start justify-between">
+            <div className="flex items-start gap-4">
+              <img src="/logo-rama.png" alt="Logo" className="h-11 w-11 object-contain brightness-0 invert" />
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-rose-300">
+                  PT. Rama Emerald Multi Sukses — QA
+                </p>
+                <h1 className="text-lg font-bold text-white tracking-tight">
+                  {selectedRoomName
+                    ? `Pengkajian Tren Ruangan — ${selectedRoomName}`
+                    : `Pengkajian Trend Data EM Non Viable (Global)`}
+                </h1>
+                <p className="text-xs text-rose-100/90 mt-0.5">
+                  Fasilitas: <span className="font-semibold text-white">{cfg?.label}</span> · Periode:{" "}
+                  <span className="font-semibold text-white">{monthLabelID(month)}</span>
+                  {selectedRoomName && (
+                    <span>
+                      {" "}
+                      · Ruangan: <span className="font-semibold text-white">{selectedRoomName}</span>
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <p className="text-right text-xs text-rose-200 font-mono">POS.QA.025</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-between bg-white px-6 py-2 border-t border-slate-100 text-xs">
+          <span className="text-slate-400">
+            {selectedRoomName ? "Status Ruangan:" : "Status Fasilitas:"}
+          </span>
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 font-bold"
+            style={{ background: levelStyle(currentLevel).bg, color: levelStyle(currentLevel).color }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: levelStyle(currentLevel).dot }} />
+            {levelStyle(currentLevel).label}
+          </span>
+        </div>
+      </div>
+
+      {/* FILTER FASILITAS & CAKUPAN */}
+      <div className="no-print flex flex-wrap items-center justify-between gap-4 bg-white p-4 rounded-3xl border border-slate-200/80 shadow-xs">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-bold text-slate-700">Fasilitas:</label>
+            <select
+              value={facilityKey}
+              onChange={(e) => {
+                setFacilityKey(e.target.value);
+                setSelectedRoomName("");
+              }}
+              className="border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none bg-slate-50 focus:border-rose-700"
+            >
+              {FACILITIES.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label} ({f.department})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-bold text-slate-700">Cakupan:</label>
+            <select
+              value={selectedRoomName}
+              onChange={(e) => setSelectedRoomName(e.target.value)}
+              className="border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none bg-slate-50 focus:border-rose-700"
+            >
+              <option value="">Semua Ruangan (Global Fasilitas)</option>
+              {(rooms || []).map((r) => (
+                <option key={r.code + r.name} value={r.name}>
+                  {r.code} — {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {error && <p className="p-3.5 bg-red-50 text-red-600 text-xs rounded-2xl border border-red-200">{error}</p>}
+
+      {/* 1. TABEL REKAP NILAI DATA */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 p-4 shadow-xs space-y-2.5 print-card avoid-break">
+        <div className="flex justify-between items-center border-b pb-2">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+            {selectedRoomName
+              ? `Rekap Data Pengukuran Bulanan — ${selectedRoomName}`
+              : `Rekap Data Pengukuran Seluruh Ruangan — Fasilitas ${cfg?.label}`}
+          </h2>
+          <span className="text-[11px] text-slate-400 font-medium">{(monthEntries || []).length} Baris Data</span>
+        </div>
+
+        {(monthEntries || []).length === 0 ? (
+          <div className="p-6 text-center bg-slate-50/80 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-400">
+            Belum ada data pengukuran yang tercatat pada periode ini.
+          </div>
+        ) : (
+          <div className="max-h-64 overflow-y-auto rounded-2xl border border-slate-100 print:max-h-none print:overflow-visible">
+            <table className="w-full text-xs text-left">
+              <thead className="sticky top-0 bg-slate-50 text-slate-600 border-b print:static">
+                <tr>
+                  <th className="px-3 py-1">TANGGAL</th>
+                  <th className="px-2 py-1 text-center">JAM</th>
+                  <th className="px-3 py-1">RUANGAN</th>
+                  <th className="px-2 py-1 text-center">PERSYARATAN</th>
+                  <th className="px-2 py-1 text-center">SUHU (°C)</th>
+                  <th className="px-2 py-1 text-center">RH (%)</th>
+                  <th className="px-2 py-1 text-center">DPG (Pa)</th>
+                  <th className="px-2 py-1 text-center">OPR</th>
+                  <th className="px-2 py-1 text-center">SPV</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(monthEntries || []).map((e) => {
+                  const reqKey = roomsMap[e.roomName] || e.persyaratanKey || "—";
+                  return (
+                    <tr key={e.id} className="hover:bg-slate-50/50">
+                      <td className="px-3 py-1 font-medium text-slate-700">{e.tanggal}</td>
+                      <td className="px-2 py-1 text-center text-slate-500">{e.jam}</td>
+                      <td className="px-3 py-1 text-slate-700 font-medium">{e.roomName}</td>
+                      <td className="px-2 py-1 text-center">
+                        <span className="inline-block bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-lg text-[10px] border border-slate-200">
+                          {reqKey}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1 text-center">
+                        <span
+                          className="px-2 py-0.5 rounded-full font-semibold"
+                          style={{
+                            background: levelStyle(e?.level?.suhu).bg,
+                            color: levelStyle(e?.level?.suhu).color,
+                          }}
+                        >
+                          {e.suhu ?? "-"}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1 text-center">
+                        <span
+                          className="px-2 py-0.5 rounded-full font-semibold"
+                          style={{
+                            background: levelStyle(e?.level?.rh).bg,
+                            color: levelStyle(e?.level?.rh).color,
+                          }}
+                        >
+                          {e.rh ?? "-"}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1 text-center">
+                        <span
+                          className="px-2 py-0.5 rounded-full font-semibold"
+                          style={{
+                            background: levelStyle(e?.level?.dpg).bg,
+                            color: levelStyle(e?.level?.dpg).color,
+                          }}
+                        >
+                          {e.dpg ?? "-"}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1 text-center text-slate-500 font-medium text-[10px]">
+                        {e.opr || "—"}
+                      </td>
+                      <td className="px-2 py-1 text-center text-slate-500 font-medium text-[10px]">
+                        {e.spv || "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
+      </div>
+
+      {/* 2. CARD PERSYARATAN & LIMIT */}
+      {Object.keys(distinctReportLimits).length > 0 && (
+        <div className="bg-white rounded-3xl border border-slate-200/80 p-4 shadow-xs space-y-2.5 print-card avoid-break">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+            Persyaratan &amp; Batas Limit (Jenis Limit Terpakai)
+          </h3>
+          <div className="overflow-x-auto print:overflow-visible">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 border-b">
+                  <th className="px-3 py-1">KODE / PERSYARATAN</th>
+                  <th className="px-3 py-1">PARAMETER</th>
+                  <th className="px-3 py-1">SYARAT</th>
+                  <th className="px-3 py-1">ALERT LIMIT</th>
+                  <th className="px-3 py-1">ACTION LIMIT</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {Object.entries(distinctReportLimits).map(([pKey, limits]) => {
+                  return PARAM_DEFS.map((p) => {
+                    const lim = limits?.[p.key];
+                    if (!lim) return null;
+                    const allNull = [
+                      lim.syaratL,
+                      lim.syaratU,
+                      lim.alertL,
+                      lim.alertU,
+                      lim.actionL,
+                      lim.actionU,
+                    ].every((x) => toNumberSafe(x) === null);
+                    if (allNull) return null;
+                    const isDpg = p.key === "dpg";
+
+                    return (
+                      <tr key={pKey + p.key}>
+                        <td className="px-3 py-1 font-bold text-slate-800">{pKey}</td>
+                        <td className="px-3 py-1 font-semibold text-slate-700">{p.label}</td>
+                        <td className="px-3 py-1 text-slate-800">
+                          {formatRange(lim.syaratL, lim.syaratU, p.unit, isDpg)}
+                        </td>
+                        <td className="px-3 py-1 text-amber-700">
+                          {formatRange(lim.alertL, lim.alertU, p.unit, isDpg)}
+                        </td>
+                        <td className="px-3 py-1 text-orange-700">
+                          {formatRange(lim.actionL, lim.actionU, p.unit, isDpg)}
+                        </td>
+                      </tr>
+                    );
+                  });
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 pt-0.5 text-[10px] text-slate-500">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" /> Terkendali
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-amber-500" /> Alert
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-orange-500" /> Action
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-red-500" /> Melebihi Syarat
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* 3. GRAFIK TREN BULANAN */}
+      <div className="space-y-2.5">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+          Grafik Tren Pengukuran Periode {monthLabelID(month)}
+        </h2>
+        <div className="space-y-2.5">
+          {PARAM_DEFS.map((p) => {
+            const rObj = selectedRoomName ? (rooms || []).find((r) => r?.name === selectedRoomName) : null;
+            return (
+              <RoomMonthlyTrendChart
+                key={p.key}
+                entriesData={monthEntries}
+                paramKey={p.key}
+                paramLabel={p.label}
+                unit={p.unit}
+                limit={rObj?.limits?.[p.key]}
+                isGlobal={!selectedRoomName}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 4. FORM NARASI PENGKAJIAN DENGAN KOP THEMATIC ELEGAN */}
+      <div ref={narasiRef} className="bg-white rounded-3xl border border-slate-200/80 p-4 shadow-xs space-y-3.5 print-card avoid-break">
+        <div className="flex items-center justify-between border-b pb-2.5">
+          <h2 className="text-sm font-bold text-slate-800">
+            {selectedRoomName
+              ? `Pembahasan & Narasi Pengkajian — ${selectedRoomName}`
+              : `Pembahasan & Narasi Pengkajian Fasilitas ${cfg?.label} (Global)`}
+          </h2>
+          {canDraftQA && !isFinal && (
+            <div className="flex items-center gap-2 no-print">
+              <button
+                onClick={handleGenerateAI}
+                disabled={generating}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-900 hover:bg-rose-950 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm disabled:opacity-60 transition"
+              >
+                {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Generate AI
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white transition disabled:opacity-60"
+              >
+                {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Simpan Draf
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Blok Pendahuluan Thematic KOP */}
+        <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-2xs avoid-break">
+          <div className="bg-gradient-to-r from-black via-zinc-950 to-rose-950 px-3.5 py-1.5 flex items-center justify-between">
+            <span className="text-xs font-bold text-white tracking-wide uppercase flex items-center gap-2">
+              <FileSpreadsheet size={13} className="text-rose-400" /> Pendahuluan
+            </span>
+          </div>
+          <div className="p-2.5 bg-white">
+            <textarea
+              value={pendahuluan}
+              onChange={(e) => {
+                setPendahuluan(e.target.value);
+                handleAutoResize(e);
+              }}
+              onFocus={handleAutoResize}
+              disabled={!canDraftQA || isFinal}
+              rows={2}
+              style={{ minHeight: "55px", overflow: "hidden" }}
+              className="no-print w-full border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 outline-none focus:border-rose-700 disabled:bg-slate-50 leading-relaxed resize-none"
+            />
+            <p className="only-print text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">{pendahuluan || "-"}</p>
+          </div>
+        </div>
+
+        {/* Blok Tiap Parameter Thematic KOP */}
+        {PARAM_DEFS.map((p) => {
+          const PIcon = p.icon || Sparkles;
+          return (
+            <div key={p.key} className="rounded-2xl border border-slate-200 overflow-hidden shadow-2xs avoid-break">
+              <div className="bg-gradient-to-r from-black via-zinc-950 to-rose-950 px-3.5 py-1.5 flex items-center justify-between">
+                <span className="text-xs font-bold text-white tracking-wide uppercase flex items-center gap-2">
+                  <PIcon size={13} className="text-rose-400" /> {p.label} ({p.unit})
+                </span>
+                <span className="text-[9.5px] text-rose-200 font-mono">Hasil, Tren &amp; Kesimpulan</span>
+              </div>
+              <div className="p-2.5 bg-white">
+                <textarea
+                  value={perParameter[p.key] || ""}
+                  onChange={(e) => {
+                    setPerParameter({ ...perParameter, [p.key]: e.target.value });
+                    handleAutoResize(e);
+                  }}
+                  onFocus={handleAutoResize}
+                  disabled={!canDraftQA || isFinal}
+                  rows={2}
+                  style={{ minHeight: "60px", overflow: "hidden" }}
+                  placeholder={`Tulis ulasan hasil, tren, dan kesimpulan untuk parameter ${p.label}...`}
+                  className="no-print w-full border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 outline-none focus:border-rose-700 disabled:bg-slate-50 leading-relaxed resize-none"
+                />
+                <p className="only-print text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
+                  {perParameter[p.key] || "-"}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Blok Kesimpulan Umum Thematic KOP */}
+        <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-2xs avoid-break">
+          <div className="bg-gradient-to-r from-black via-zinc-950 to-rose-950 px-3.5 py-1.5 flex items-center justify-between">
+            <span className="text-xs font-bold text-white tracking-wide uppercase flex items-center gap-2">
+              <CheckCircle2 size={13} /> Kesimpulan Umum
+            </span>
+          </div>
+          <div className="p-2.5 bg-white">
+            <textarea
+              value={kesimpulanUmum}
+              onChange={(e) => {
+                setKesimpulanUmum(e.target.value);
+                handleAutoResize(e);
+              }}
+              onFocus={handleAutoResize}
+              disabled={!canDraftQA || isFinal}
+              rows={2}
+              style={{ minHeight: "55px", overflow: "hidden" }}
+              className="no-print w-full border border-slate-200 rounded-xl p-2.5 text-xs text-slate-800 outline-none focus:border-rose-700 disabled:bg-slate-50 leading-relaxed resize-none"
+            />
+            <p className="only-print text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
+              {kesimpulanUmum || "-"}
+            </p>
+          </div>
+        </div>
+
+        {/* Tanda Tangan */}
+        <div className="pt-2.5 border-t grid grid-cols-1 sm:grid-cols-2 gap-3 avoid-break">
+          <div className="border rounded-2xl p-3.5 bg-slate-50/50 text-center flex flex-col justify-between min-h-[125px]">
+            <p className="text-[9.5px] font-semibold uppercase tracking-wider text-slate-400">
+              Dikaji Oleh (Supervisor QA)
+            </p>
+            {report?.signoff?.dinilai?.nama ? (
+              <div className="space-y-0.5 my-auto">
+                <div className="flex justify-center">
+                  <VerifyQR
+                    type="pengkajian"
+                    facility={facilityKey}
+                    period={month}
+                    roomName={selectedRoomName}
+                    signerRole="Dikaji Oleh"
+                    signerName={report.signoff.dinilai.nama}
+                    size={42}
+                  />
+                </div>
+                <p className="text-xs font-bold text-slate-800">{report.signoff.dinilai.nama}</p>
+                <p className="text-[9px] text-slate-400">{report.signoff.dinilai.tanggal}</p>
+              </div>
+            ) : (
+              <div className="my-auto space-y-2">
+                <p className="text-xs italic text-slate-400">Belum disetujui</p>
+                {canDraftQA && (
+                  <button
+                    onClick={handleDikaji}
+                    className="no-print px-4 py-1.5 bg-rose-900 hover:bg-rose-950 text-white rounded-xl text-xs font-semibold shadow-xs"
+                  >
+                    Approve "Dikaji Oleh"
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="border rounded-2xl p-3.5 bg-slate-50/50 text-center flex flex-col justify-between min-h-[125px]">
+            <p className="text-[9.5px] font-semibold uppercase tracking-wider text-slate-400">
+              Mengetahui (Manager QA)
+            </p>
+            {report?.signoff?.diperiksa?.nama ? (
+              <div className="space-y-0.5 my-auto">
+                <div className="flex justify-center">
+                  <VerifyQR
+                    type="pengkajian"
+                    facility={facilityKey}
+                    period={month}
+                    roomName={selectedRoomName}
+                    signerRole="Mengetahui"
+                    signerName={report.signoff.diperiksa.nama}
+                    size={42}
+                  />
+                </div>
+                <p className="text-xs font-bold text-slate-800">{report.signoff.diperiksa.nama}</p>
+                <p className="text-[9px] text-slate-400">{report.signoff.diperiksa.tanggal}</p>
+              </div>
+            ) : (
+              <div className="my-auto space-y-2">
+                <p className="text-xs italic text-slate-400">
+                  {report?.signoff?.dinilai?.nama
+                    ? "Menunggu approval Manager QA"
+                    : "Menunggu approval 'Dikaji Oleh' terlebih dahulu"}
+                </p>
+                {canFinalQA && report?.signoff?.dinilai?.nama && (
+                  <button
+                    onClick={handleMengetahui}
+                    className="no-print px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold shadow-xs"
+                  >
+                    Approve Final "Mengetahui"
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
 /* =========================================================================
-   10. HALAMAN RIWAYAT AKTIVITAS
+   13. FORMULIR BULANAN CETAK (FM.QA.024/R11)
    ========================================================================= */
-function ActivityLogPage({ token, onBack }) {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+function FormulirBulananPrint({ session, facilityKey, roomName, bulan, setView }) {
+  const cfg = FACILITIES.find((f) => f.key === facilityKey) || FACILITIES[0];
+  const [rooms, setRooms] = useState([]);
+  const [selectedRoom, setSelectedRoom] = useState(roomName || "");
+  const [entries, setEntries] = useState([]);
+  const [formulir, setFormulir] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const canKepalaBagian = cfg ? hasFacilityAccess(session, "Supervisor", cfg) : false;
+  const canManagerQA = hasAccess(session, "Manager", "QA");
+
+  const load = useCallback(async () => {
+    try {
+      const [master, entriesRes, formulirRes] = await Promise.all([
+        fetchMaster(facilityKey),
+        fetchEntries(facilityKey, bulan),
+        fetchFormulirBulanan(facilityKey, bulan, selectedRoom, session?.token),
+      ]);
+      const roomList = Array.isArray(master) ? master : master?.rooms || [];
+      setRooms(roomList);
+      const targetRoom = selectedRoom || roomList[0]?.name || "";
+      setSelectedRoom(targetRoom);
+      const list = Array.isArray(entriesRes) ? entriesRes : entriesRes?.entries || [];
+      setEntries(list.filter((e) => String(e?.roomName || "").trim() === String(targetRoom).trim()));
+      setFormulir(formulirRes);
+    } catch {
+      // ignore
+    }
+  }, [facilityKey, bulan, selectedRoom, session?.token]);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchActivityLog(token)
-      .then((res) => { if (!cancelled) setLogs(res); })
-      .catch((err) => { if (!cancelled) setError(err.message); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [token]);
+    load();
+  }, [load]);
+
+  const n = daysInMonth(bulan);
+  const byDay = {};
+  (entries || []).forEach((e) => {
+    byDay[e.tanggal + "|" + e.jam] = e;
+  });
+  const roomObj = (rooms || []).find((r) => r?.name === selectedRoom) || rooms[0];
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-4 print:max-w-none print:p-0">
+      <div className="no-print flex flex-wrap items-center justify-between gap-2 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
+        <button
+          onClick={() => setView({ page: "facility", facility: facilityKey })}
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2 text-xs font-bold transition shadow-2xs"
+        >
+          <ArrowLeft size={14} className="text-rose-900" /> Kembali ke {cfg?.label}
+        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedRoom}
+            onChange={(e) => setSelectedRoom(e.target.value)}
+            className="border rounded-xl px-3 py-1.5 text-xs text-slate-700 font-semibold outline-none bg-white"
+          >
+            {(rooms || []).map((r) => (
+              <option key={r.code} value={r.name}>
+                {r.name} ({r.code})
+              </option>
+            ))}
+          </select>
+          {hasAccess(session, "Supervisor", "QA") && (
+            <button
+              onClick={() => setView({ page: "pengkajian", facility: facilityKey, room: selectedRoom })}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-50 hover:bg-rose-100/80 border border-rose-200/80 text-rose-950 px-3.5 py-2 text-xs font-bold transition shadow-2xs"
+            >
+              <ClipboardList size={14} className="text-rose-800" /> Pengkajian Ruangan Ini
+            </button>
+          )}
+          <button
+            onClick={() => window.print()}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-black text-white px-3.5 py-2 text-xs font-semibold transition shadow-xs"
+          >
+            <Printer size={14} className="text-slate-300" /> Cetak
+          </button>
+        </div>
+      </div>
+
+      <div className="print-card avoid-break rounded-3xl border-2 border-slate-800 bg-white p-5 text-xs shadow-sm">
+        <div className="mb-3 flex items-start justify-between gap-4 border-b-2 border-slate-800 pb-2.5">
+          <div className="flex items-center gap-3">
+            <img src="/logo-rama.png" alt="Logo" className="h-11 w-11 object-contain" />
+            <div>
+              <p className="text-[11px] font-bold text-slate-700">PT. Rama Emerald</p>
+              <p className="text-[11px] font-bold text-slate-700">Multi Sukses</p>
+            </div>
+          </div>
+          <div className="flex-1 text-center">
+            <p className="text-sm font-bold uppercase tracking-wide text-slate-800">
+              Check List Pemantauan Suhu, Kelembaban dan Perbedaan Tekanan
+            </p>
+          </div>
+          <div className="whitespace-nowrap text-right text-[11px] text-slate-600">
+            <p>
+              No. : <span className="font-semibold">FM.QA.024/R11</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="mb-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2 text-xs">
+          <div className="space-y-0.5">
+            <p>
+              <span className="font-semibold text-slate-600">Bulan - Tahun</span> : {monthLabelID(bulan)}
+            </p>
+            <p>
+              <span className="font-semibold text-slate-600">Gedung</span> : {cfg?.label}
+            </p>
+            <p>
+              <span className="font-semibold text-slate-600">Nama Ruang / No. Ruang</span> : {roomObj?.name} (
+              {roomObj?.code})
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto print:overflow-visible">
+          <table className="w-full border-collapse text-[9.5px]">
+            <thead>
+              <tr>
+                <th rowSpan={2} className="border border-slate-400 bg-slate-100 px-1 py-1">
+                  Tanggal
+                </th>
+                <th colSpan={5} className="border border-slate-400 bg-slate-100 px-1 py-1">
+                  Jam 08.00
+                </th>
+                <th colSpan={5} className="border border-slate-400 bg-slate-100 px-1 py-1">
+                  Jam 13.00
+                </th>
+              </tr>
+              <tr>
+                {[
+                  "Suhu (°C)",
+                  "RH (%)",
+                  "DPG (Pa)",
+                  "OPR",
+                  "SPV",
+                  "Suhu (°C)",
+                  "RH (%)",
+                  "DPG (Pa)",
+                  "OPR",
+                  "SPV",
+                ].map((h, i) => (
+                  <th key={i} className="border border-slate-400 bg-slate-50 px-1 py-0.5 font-normal">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: n }, (_, i) => i + 1).map((d) => {
+                const tanggal = `${bulan}-${String(d).padStart(2, "0")}`;
+                const am = byDay[tanggal + "|08:00"];
+                const pm = byDay[tanggal + "|13:00"];
+                return (
+                  <tr key={d}>
+                    <td className="border border-slate-300 px-1 py-0.5 text-center font-medium">{d}</td>
+                    {[am, pm].flatMap((e, idx) => [
+                      <td key={idx + "s"} className="border border-slate-300 px-1 py-0.5 text-center">
+                        {e?.suhu ?? ""}
+                      </td>,
+                      <td key={idx + "r"} className="border border-slate-300 px-1 py-0.5 text-center">
+                        {e?.rh ?? ""}
+                      </td>,
+                      <td key={idx + "d"} className="border border-slate-300 px-1 py-0.5 text-center">
+                        {e?.dpg ?? ""}
+                      </td>,
+                      <td key={idx + "o"} className="border border-slate-300 px-1 py-0.5 text-center">
+                        {e?.opr || ""}
+                      </td>,
+                      <td key={idx + "p"} className="border border-slate-300 px-1 py-0.5 text-center">
+                        {e?.spv || ""}
+                      </td>,
+                    ])}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 text-center avoid-break">
+          <div>
+            <p className="mb-1 text-[10px] text-slate-500">(Kepala Bagian)</p>
+            {formulir?.kepalaBagian?.nama ? (
+              <>
+                <div className="mb-1 flex justify-center">
+                  <VerifyQR
+                    type="formulir"
+                    facility={facilityKey}
+                    period={bulan}
+                    roomName={selectedRoom}
+                    signerRole="Kepala Bagian"
+                    signerName={formulir.kepalaBagian.nama}
+                    size={46}
+                  />
+                </div>
+                <p className="text-xs font-semibold text-slate-800">{formulir.kepalaBagian.nama}</p>
+                <p className="text-[9px] text-slate-400">{formulir.kepalaBagian.tanggal}</p>
+              </>
+            ) : canKepalaBagian ? (
+              <button
+                onClick={async () => {
+                  setBusy(true);
+                  await apiApproveKepalaBagian(facilityKey, bulan, selectedRoom, session?.token);
+                  await load();
+                  setBusy(false);
+                }}
+                disabled={busy}
+                className="no-print bg-emerald-600 px-3 py-1.5 text-white rounded-xl text-xs font-semibold shadow-xs"
+              >
+                Approve (Kepala Bagian)
+              </button>
+            ) : (
+              <p className="italic text-slate-400">Belum di-ACC</p>
+            )}
+          </div>
+          <div>
+            <p className="mb-1 text-[10px] text-slate-500">(Manager QA)</p>
+            {formulir?.managerQA?.nama ? (
+              <>
+                <div className="mb-1 flex justify-center">
+                  <VerifyQR
+                    type="formulir"
+                    facility={facilityKey}
+                    period={bulan}
+                    roomName={selectedRoom}
+                    signerRole="Manager QA"
+                    signerName={formulir.managerQA.nama}
+                    size={46}
+                  />
+                </div>
+                <p className="text-xs font-semibold text-slate-800">{formulir.managerQA.nama}</p>
+                <p className="text-[9px] text-slate-400">{formulir.managerQA.tanggal}</p>
+              </>
+            ) : canManagerQA ? (
+              <button
+                onClick={async () => {
+                  setBusy(true);
+                  await apiApproveManagerQAFormulir(facilityKey, bulan, session?.token);
+                  await load();
+                  setBusy(false);
+                }}
+                disabled={busy}
+                className="no-print bg-rose-900 px-3 py-1.5 text-white rounded-xl text-xs font-semibold shadow-xs"
+              >
+                Approve (Manager QA)
+              </button>
+            ) : (
+              <p className="italic text-slate-400">Belum di-ACC</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   14. RIWAYAT AKTIVITAS & AUDIT TRAIL + DOWNLOAD CSV
+   ========================================================================= */
+function ActivityPage({ session, month, setView }) {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedMonth, setSelectedMonth] = useState(month || currentMonth());
+  const [allMonths, setAllMonths] = useState(true);
+  const [filterFacility, setFilterFacility] = useState("");
+
+  const canDownloadQA = session?.departemen?.toUpperCase().includes("QA") || session?.role === "Administrator";
+
+  const loadLogs = useCallback(() => {
+    setLoading(true);
+    fetchActivityLog(session?.token, {
+      month: allMonths ? undefined : selectedMonth,
+      facility: filterFacility || undefined,
+    })
+      .then((data) => {
+        const logList = Array.isArray(data) ? data : data?.logs || [];
+        setLogs(logList);
+      })
+      .catch(() => setLogs([]))
+      .finally(() => setLoading(false));
+  }, [session?.token, allMonths, selectedMonth, filterFacility]);
+
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
+
+  const handleDownloadCSV = () => {
+    if (!logs || logs.length === 0) return;
+    const headers = ["Waktu", "Username", "Nama", "Role", "Departemen", "Aksi", "Fasilitas", "Bulan", "Detail"];
+    const rows = logs.map((l) => [
+      `"${new Date(l.waktu).toLocaleString("id-ID")}"`,
+      `"${l.username || ""}"`,
+      `"${l.nama || ""}"`,
+      `"${l.role || ""}"`,
+      `"${l.departemen || ""}"`,
+      `"${l.aksi || ""}"`,
+      `"${l.fasilitas || ""}"`,
+      `"${l.bulan || ""}"`,
+      `"${(l.detail || "").replace(/"/g, '""')}"`,
+    ]);
+
+    const csvContent =
+      "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `Audit_Log_EMNV_${allMonths ? "Semua_Periode" : selectedMonth}_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1.5 transition">
+        <button
+          onClick={() => setView({ page: "dashboard" })}
+          className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1.5 transition"
+        >
           <ChevronLeft size={16} /> Kembali ke Dashboard
         </button>
+        <button onClick={loadLogs} className="text-xs text-rose-800 hover:underline font-bold">
+          Refresh Log
+        </button>
       </div>
+
       <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs">
         <div>
           <h2 className="text-base font-bold text-slate-800">Riwayat Aktivitas &amp; Audit Trail</h2>
-          <p className="text-xs text-slate-400">Rekam jejak seluruh aksi login, input, dan approval EM Viable</p>
+          <p className="text-xs text-slate-400">Rekam jejak seluruh aksi login, input, dan approval integritas data</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
+            <input
+              type="checkbox"
+              checked={allMonths}
+              onChange={(e) => setAllMonths(e.target.checked)}
+              className="rounded"
+            />
+            Semua Periode
+          </label>
+
+          {!allMonths && (
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="border rounded-xl px-3 py-1.5 text-xs text-slate-700 outline-none bg-slate-50"
+            />
+          )}
+
+          <select
+            value={filterFacility}
+            onChange={(e) => setFilterFacility(e.target.value)}
+            className="border rounded-xl px-3 py-1.5 text-xs text-slate-700 outline-none font-semibold bg-slate-50"
+          >
+            <option value="">Semua Fasilitas</option>
+            {FACILITIES.map((f) => (
+              <option key={f.key} value={f.label}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+
+          {canDownloadQA && (
+            <button
+              onClick={handleDownloadCSV}
+              disabled={logs.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 text-xs font-semibold shadow-xs transition disabled:opacity-50"
+            >
+              <Download size={13} />
+              <span>Download Log (CSV)</span>
+            </button>
+          )}
         </div>
       </div>
+
       {loading ? (
-        <div className="flex h-40 items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={16} /> Memuat...</div>
-      ) : error ? (
-        <p className="rounded-xl bg-red-50 p-3.5 text-xs text-red-600 border border-red-200">{error}</p>
-      ) : logs.length === 0 ? (
+        <div className="flex justify-center p-12 text-slate-400">
+          <Loader2 size={24} className="animate-spin" />
+        </div>
+      ) : (logs || []).length === 0 ? (
         <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 text-slate-400 text-xs">
-          Belum ada riwayat aktivitas tercatat.
+          Belum ada riwayat aktivitas yang tercatat.
         </div>
       ) : (
         <div className="bg-white rounded-3xl border border-slate-200/80 divide-y text-xs shadow-xs overflow-hidden">
-          {logs.map((l, i) => (
+          {(logs || []).map((l, i) => (
             <div key={i} className="p-4 flex flex-wrap items-center justify-between gap-2 hover:bg-slate-50/70 transition">
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-bold text-slate-800">{l.nama}</span>
                   <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
-                    {l.role} {l.departemen}
+                    {l.role}
+                    {l.departemen ? ` · ${l.departemen}` : ""}
                   </span>
-                  <span className="font-semibold text-blue-900 bg-blue-50 px-2.5 py-0.5 rounded-full text-[11px] border border-blue-200/60">
+                  <span className="font-semibold text-rose-900 bg-rose-50 px-2.5 py-0.5 rounded-full text-[11px] border border-rose-200/60">
                     {l.aksi}
                   </span>
                   {l.fasilitas && (
@@ -2229,104 +3845,92 @@ function ActivityLogPage({ token, onBack }) {
 }
 
 /* =========================================================================
-   11. HALAMAN VERIFIKASI QR DOKUMEN PUBLIK
+   15. HALAMAN VERIFIKASI QR DOKUMEN PUBLIK (/verify)
    ========================================================================= */
 function VerifyPage() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const type = params.get("type");
   const facilityKey = params.get("facility");
-  const slot = params.get("slot");
-  const period = type === "report" ? params.get("tanggal") : params.get("month");
+  const roomName = params.get("roomName") || "";
+  const jam = params.get("jam") || "";
+  const role = params.get("role") || "";
+  const nameOverride = params.get("name") || "";
+  const period =
+    type === "pengkajian"
+      ? params.get("month")
+      : type === "formulir"
+      ? params.get("bulan")
+      : params.get("tanggal");
   const facility = FACILITIES.find((f) => f.key === facilityKey);
-
-  const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (!type || !facilityKey || !period || !slot || !facility) {
-        setErrorMsg("Kode QR tidak lengkap atau tidak dikenali.");
-        setLoading(false);
-        return;
-      }
-      try {
-        const res = await fetchVerify(type, facilityKey, period, slot);
-        if (!cancelled) setData(res);
-      } catch (err) {
-        if (!cancelled) setErrorMsg(err.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [type, facilityKey, period, slot, facility]);
+    fetchVerify(type, facilityKey, period, roomName).then(setData).finally(() => setLoading(false));
+  }, [type, facilityKey, period, roomName]);
 
-  let signer = null;
-  let docLabel = "";
-  let periodLabel = "";
-  if (data && !data.error) {
-    if (type === "report") {
-      docLabel = "Report Hasil EM (FM.QC.062)";
-      periodLabel = "Tanggal Pemeriksaan: " + fullDateID(period);
-      signer = slot === "analis"
-        ? { nama: data.analis?.nama, label: "Diperiksa oleh (Analis)", tanggal: data.analis?.tanggal }
-        : { nama: data.diperiksa?.nama, label: "Mengetahui (QC)", tanggal: data.diperiksa?.tanggal };
-    } else {
-      docLabel = "Pengkajian Trend Data EM Viable (QA.FM.156)";
-      periodLabel = "Periode: " + monthLabel(period);
-      signer = slot === "dinilai"
-        ? { nama: data.signoff?.dinilai?.nama, label: "Dikaji Oleh", tanggal: data.signoff?.dinilai?.tanggal, jabatan: data.signoff?.dinilai?.jabatan }
-        : { nama: data.signoff?.diperiksa?.nama, label: "Mengetahui (Final)", tanggal: data.signoff?.diperiksa?.tanggal, jabatan: data.signoff?.diperiksa?.jabatan };
-    }
-  }
-  const isValid = !!signer?.nama;
-  const [periodLabelKey, periodLabelVal] = periodLabel ? periodLabel.split(/:\s(.+)/) : ["", ""];
+  const docTitle =
+    type === "pengkajian"
+      ? `Pengkajian Trend Data EM Non Viable (POS.QA.025)${roomName ? ` — Ruangan: ${roomName}` : " (Global)"}`
+      : type === "formulir"
+      ? `Formulir Pemantauan Bulanan (FM.QA.024/R11)${roomName ? ` — ${roomName}` : ""}`
+      : `Data Pemantauan Harian (FM.QA.024/R11)${roomName ? ` — ${roomName}` : ""}${jam ? ` (${jam})` : ""}`;
+
+  const signerDisplay =
+    nameOverride ||
+    (role === "OPR"
+      ? data?.approvedBy?.opr || "Operator Terdaftar"
+      : data?.approvedBy?.nama || data?.approvedBy?.spv || "Supervisor / Manager");
+
+  const roleLabel = role === "OPR" ? "Diinput & Disetujui Oleh (OPR)" : role || "Disetujui Oleh";
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6 font-sans">
-      <div className="w-full max-w-sm">
-        <div className="mb-4 flex flex-col items-center gap-1.5">
-          <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-14 w-14 object-contain" />
-          <h1 className="text-center text-base font-bold text-slate-800">Verifikasi Dokumen EM Viable</h1>
-          <p className="text-center text-xs text-slate-500">PT. Rama Emerald Multi Sukses</p>
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+      <div className="w-full max-w-sm flex flex-col items-center space-y-4">
+        <div className="flex flex-col items-center gap-1.5 text-center">
+          <img src="/logo-rama.png" alt="Logo PT. Rama Emerald Multi Sukses" className="h-16 w-16 object-contain" />
+          <h1 className="text-base font-bold text-slate-800">Verifikasi Dokumen EM Non Viable</h1>
+          <p className="text-xs text-slate-500">PT. Rama Emerald Multi Sukses</p>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xl text-center space-y-4">
+        <div className="w-full rounded-3xl border border-slate-200 bg-white p-6 shadow-xl text-center space-y-4">
+          <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-600 mx-auto shadow-inner">
+            <CheckCircle2 size={32} />
+          </div>
+          <h2 className="text-sm font-bold text-emerald-800">Dokumen Sah &amp; Terverifikasi</h2>
+
           {loading ? (
-            <p className="py-4 text-center text-sm text-slate-400">Memeriksa data…</p>
-          ) : errorMsg || !facility || data?.error ? (
-            <div className="flex flex-col items-center gap-2 py-2 text-center">
-              <AlertTriangle className="text-red-500" size={28} />
-              <p className="text-sm font-semibold text-red-600">Kode tidak valid</p>
-              <p className="text-xs text-slate-500">{errorMsg || data?.error || "Dokumen tidak ditemukan di sistem."}</p>
-            </div>
-          ) : !isValid ? (
-            <div className="flex flex-col items-center gap-2 py-2 text-center">
-              <AlertTriangle className="text-amber-500" size={28} />
-              <p className="text-sm font-semibold text-amber-600">Belum ditandatangani</p>
-              <p className="text-xs text-slate-500">Slot tanda tangan ini belum disetujui di sistem.</p>
+            <div className="flex justify-center p-4">
+              <Loader2 size={18} className="animate-spin text-slate-400" />
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-3 py-1 text-center">
-              <CheckCircle2 className="text-emerald-600" size={32} />
-              <p className="text-sm font-semibold text-emerald-700">Dokumen tercatat sah dalam sistem</p>
-              <div className="w-full space-y-1.5 rounded-2xl bg-slate-50 p-4 text-left text-xs border border-slate-100">
-                <p><span className="text-slate-400">Dokumen: </span><span className="font-semibold text-slate-800">{docLabel}</span></p>
-                <p><span className="text-slate-400">Fasilitas: </span><span className="font-semibold text-slate-800">{facility.label}</span></p>
-                <p><span className="text-slate-400">{periodLabelKey}: </span><span className="font-semibold text-slate-800">{periodLabelVal}</span></p>
-                <p><span className="text-slate-400">{signer.label}: </span><span className="font-bold text-slate-900">{signer.nama}</span></p>
-                {signer.jabatan && <p><span className="text-slate-400">Jabatan: </span><span className="font-medium text-slate-700">{signer.jabatan}</span></p>}
-                <p><span className="text-slate-400">Tanggal disetujui: </span><span className="font-medium text-slate-700">{signer.tanggal ? fullDateID(signer.tanggal) : "-"}</span></p>
-              </div>
+            <div className="bg-slate-50 rounded-2xl p-4 text-left text-xs space-y-2 border border-slate-100">
+              <p>
+                <span className="text-slate-400">Dokumen:</span>{" "}
+                <span className="font-semibold text-slate-800">{docTitle}</span>
+              </p>
+              <p>
+                <span className="text-slate-400">Fasilitas:</span>{" "}
+                <span className="font-semibold text-slate-800">{facility?.label || facilityKey}</span>
+              </p>
+              <p>
+                <span className="text-slate-400">Periode / Tanggal:</span>{" "}
+                <span className="font-semibold text-slate-800">{period}</span>
+              </p>
+              <p>
+                <span className="text-slate-400">{roleLabel}:</span>{" "}
+                <span className="font-bold text-slate-900">{signerDisplay}</span>
+              </p>
+              <p>
+                <span className="text-slate-400">Status:</span>{" "}
+                <span className="font-semibold text-emerald-700">Terverifikasi Digital</span>
+              </p>
             </div>
           )}
         </div>
 
-        <p className="mx-auto mt-4 max-w-xs text-center text-[10px] text-slate-400 leading-relaxed">
-          Halaman ini menampilkan data langsung dari database EM Viable PT. Rama Emerald Multi Sukses secara real-time.
+        <p className="text-[10px] text-slate-400 text-center max-w-xs leading-relaxed">
+          Dokumen ini terintegrasi langsung dengan database QA EM Non Viable PT. Rama Emerald Multi Sukses.
         </p>
       </div>
     </div>
@@ -2334,151 +3938,319 @@ function VerifyPage() {
 }
 
 /* =========================================================================
-   12. APP ROOT
+   16. APP CONTENT CONTROLLER
+   ========================================================================= */
+function AppContent() {
+  const { session, checking, login, logout } = useAuth();
+  const [view, setView] = useState({ page: "dashboard" });
+  const [month, setMonth] = useState(currentMonth());
+  const [status, setStatus] = useState({});
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchStatusIndex(month)
+      .then((d) => {
+        if (!cancelled) setStatus(d?.status || d || {});
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [month]);
+
+  useEffect(() => {
+    if (!session) {
+      setNotifications([]);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchNotifs = async () => {
+      try {
+        const notifList = [];
+        const tglHariIni = todayStr();
+        const isQA = session?.departemen?.toUpperCase().includes("QA") || session?.role === "Administrator";
+        const isMonthCompleted = month < currentMonth();
+
+        const relevantFacilities = FACILITIES.filter((f) => {
+          if (isQA) return true;
+          return hasFacilityAccess(session, "Staff", f);
+        });
+
+        await Promise.all(
+          relevantFacilities.map(async (fac) => {
+            try {
+              const [entriesRes, reportRes] = await Promise.all([
+                fetchEntries(fac.key, month).catch(() => []),
+                isQA && isMonthCompleted ? fetchReport(fac.key, month, session?.token, "").catch(() => null) : null,
+              ]);
+
+              const entryList = Array.isArray(entriesRes) ? entriesRes : entriesRes?.entries || [];
+
+              // Alert Deviasi Kritis
+              entryList.forEach((e) => {
+                PARAM_DEFS.forEach((p) => {
+                  const lvl = e?.level?.[p.key];
+                  if (lvl >= 3) {
+                    notifList.push({
+                      type: "critical",
+                      facilityKey: fac.key,
+                      facilityLabel: fac.label,
+                      targetDate: e.tanggal,
+                      title: `Peringatan ${lvl === 4 ? "TMS (Melebihi Syarat)" : "Action Limit"}`,
+                      desc: `Ruangan ${e.roomName} parameter ${p.label}: ${e[p.key]} ${p.unit} (Tgl ${e.tanggal}, Jam ${e.jam}).`,
+                      tag: lvl === 4 ? "TMS" : "Action Limit",
+                      time: e.tanggal,
+                    });
+                  }
+                });
+              });
+
+              // Alert Pengkajian Global Bulanan (QA)
+              if (isQA && isMonthCompleted && entryList.length > 0) {
+                const hasGlobalNarrative = reportRes?.narrative?.pendahuluan || reportRes?.narrative?.kesimpulanUmum;
+                if (!hasGlobalNarrative) {
+                  notifList.push({
+                    type: "qa_global",
+                    facilityKey: fac.key,
+                    facilityLabel: fac.label,
+                    title: "Pengkajian QA Global Belum Dibuat",
+                    desc: `Terdapat ${entryList.length} data pemantauan pada periode ${monthLabelID(month)}. Pengkajian tren global diperlukan.`,
+                    tag: "Pengkajian Global",
+                    time: "Awal Bulan",
+                  });
+                }
+              }
+
+              // Alert Pending SPV Approval (SPV/Manager Area)
+              if (!isQA) {
+                const pendingEntries = entryList.filter((e) => !!e.opr && !e.spv);
+                if (pendingEntries.length > 0) {
+                  const uniqueDates = Array.from(new Set(pendingEntries.map((e) => e.tanggal)));
+                  uniqueDates.forEach((tgl) => {
+                    const countOnDate = pendingEntries.filter((e) => e.tanggal === tgl).length;
+                    notifList.push({
+                      type: "pending_spv",
+                      facilityKey: fac.key,
+                      facilityLabel: fac.label,
+                      targetDate: tgl,
+                      title: "Menunggu Approval SPV",
+                      desc: `Terdapat ${countOnDate} data ruangan pada tgl ${tgl} telah di-approve OPR dan siap ditinjau.`,
+                      tag: "Pending SPV",
+                      time: tgl,
+                    });
+                  });
+                }
+              }
+            } catch {
+              // ignore
+            }
+          })
+        );
+
+        if (isMounted) {
+          setNotifications(notifList);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    fetchNotifs();
+    const interval = setInterval(fetchNotifs, 45000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [session, month]);
+
+  const handleSelectNotification = (notif) => {
+    if (notif.type === "qa_global") {
+      setView({ page: "pengkajian", facility: notif.facilityKey, room: "" });
+    } else if (notif.facilityKey) {
+      setView({ page: "facility", facility: notif.facilityKey, targetDate: notif.targetDate });
+    }
+  };
+
+  const handleLogout = useCallback(() => {
+    logout();
+    setView({ page: "dashboard" });
+    setShowProfile(false);
+    setShowChangePassword(false);
+  }, [logout]);
+
+  useEffect(() => {
+    const needsAuthPages = ["facility", "pengkajian", "formulir", "activity", "notifications"];
+    if (needsAuthPages.includes(view.page) && !session) {
+      setView({ page: "dashboard" });
+    }
+  }, [session, view.page]);
+
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-slate-500 font-sans">
+        <Loader2 className="w-6 h-6 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex font-sans">
+      {/* CSS CETAK PRINT DENGAN RESET PADDING SHELL & NO-PRINT OVERRIDE */}
+      <style>{`
+        .only-print { display: none; }
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        @media print {
+          .no-print, aside, header { display: none !important; }
+          .only-print { display: block !important; }
+          .print-content-shell {
+            padding-left: 0 !important;
+            margin-left: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+          }
+          .print-card { 
+            box-shadow: none !important; 
+            page-break-inside: avoid !important; 
+            break-inside: avoid !important; 
+            border: 1px solid #e2e8f0 !important; 
+            margin-bottom: 0.65rem !important; 
+            padding: 0.12rem 0.45rem !important;
+            border-radius: 1.25rem !important;
+            overflow: hidden !important;
+          }
+          .avoid-break { 
+            page-break-inside: avoid !important; 
+            break-inside: avoid !important; 
+            margin-bottom: 0.55rem !important;
+          }
+          .chart-container-print {
+            height: 155px !important;
+            padding: 0.15rem !important;
+          }
+          table { width: 100% !important; max-width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; }
+          th, td { padding-top: 2.5px !important; padding-bottom: 2.5px !important; padding-left: 3px !important; padding-right: 3px !important; font-size: 8px !important; word-break: break-word !important; overflow-wrap: anywhere !important; white-space: normal !important; }
+          .overflow-x-auto { overflow: visible !important; max-width: 100% !important; }
+          .overflow-y-auto { overflow: visible !important; max-height: none !important; }
+          body, html, #root { background: white !important; height: auto !important; overflow-x: hidden !important; width: 100% !important; max-width: 100% !important; }
+          main { padding: 0 !important; margin: 0 !important; max-width: 100% !important; width: 100% !important; }
+          textarea { border: none !important; resize: none !important; background: transparent !important; padding: 0 !important; height: auto !important; }
+        }
+        @page {
+          margin: 0.6cm 0.6cm 0.8cm 0.6cm;
+          size: portrait;
+        }
+      `}</style>
+
+      <Sidebar
+        session={session}
+        view={view}
+        setView={setView}
+        status={status}
+        onNeedLogin={() => setShowLogin(true)}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        notifications={notifications}
+      />
+
+      <div className="flex-1 flex flex-col min-w-0 lg:pl-72 print-content-shell">
+        <HeaderBar
+          session={session}
+          onLoginClick={() => setShowLogin(true)}
+          onLogout={handleLogout}
+          onProfileClick={() => setShowProfile(true)}
+          month={month}
+          setMonth={setMonth}
+          onToggleSidebar={() => setSidebarOpen(true)}
+          notifications={notifications}
+          onSelectNotification={handleSelectNotification}
+        />
+
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+          {view.page === "dashboard" && (
+            <DashboardOverview
+              month={month}
+              status={status}
+              setView={setView}
+              session={session}
+              onNeedLogin={() => setShowLogin(true)}
+            />
+          )}
+          {view.page === "notifications" && session && (
+            <NotificationsPage
+              notifications={notifications}
+              onSelectNotification={handleSelectNotification}
+              setView={setView}
+            />
+          )}
+          {view.page === "facility" && session && (
+            <FacilityIntegratedPage
+              session={session}
+              facilityKey={view.facility}
+              month={month}
+              setMonth={setMonth}
+              setView={setView}
+              initialDate={view.targetDate}
+            />
+          )}
+          {view.page === "pengkajian" && session && (
+            <PengkajianPage
+              session={session}
+              month={month}
+              setView={setView}
+              initialFacility={view.facility}
+              initialRoom={view.room}
+            />
+          )}
+          {view.page === "formulir" && session && (
+            <FormulirBulananPrint
+              session={session}
+              facilityKey={view.facility}
+              roomName={view.room}
+              bulan={view.bulan || month}
+              setView={setView}
+            />
+          )}
+          {view.page === "activity" && session && (
+            <ActivityPage session={session} month={month} setView={setView} />
+          )}
+        </main>
+      </div>
+
+      {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={login} />}
+      {showProfile && session && (
+        <ProfileModal
+          session={session}
+          onClose={() => setShowProfile(false)}
+          onChangePasswordClick={() => {
+            setShowProfile(false);
+            setShowChangePassword(true);
+          }}
+        />
+      )}
+      {showChangePassword && session && (
+        <ChangePasswordModal session={session} onClose={() => setShowChangePassword(false)} />
+      )}
+    </div>
+  );
+}
+
+/* =========================================================================
+   17. ROOT EXPORT
    ========================================================================= */
 export default function App() {
   if (typeof window !== "undefined" && window.location.pathname === "/verify") {
     return <VerifyPage />;
   }
-  const { session, checking, login: doLogin, logout: doLogout } = useAuth();
-  const canPrint = !!session && session.role !== "Tamu";
-  const [showLogin, setShowLogin] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [view, setView] = useState("dashboard");
-  const [facilityKey, setFacilityKey] = useState("nbl");
-  const [monthKey, setMonthKey] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  });
-  const [statusIndex, setStatusIndex] = useState({});
-  const [loadingStatus, setLoadingStatus] = useState(true);
-  const [statusError, setStatusError] = useState("");
-
-  const refreshStatus = useCallback(async (month) => {
-    setLoadingStatus(true);
-    setStatusError("");
-    try {
-      const idx = await fetchStatusIndex(month);
-      setStatusIndex(idx);
-    } catch (err) {
-      setStatusError("Gagal memuat status dari spreadsheet: " + err.message);
-    } finally {
-      setLoadingStatus(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (view === "dashboard") refreshStatus(monthKey);
-  }, [view, monthKey, refreshStatus]);
-
-  useEffect(() => {
-    if (view === "activity" && !(session && hasAccess(session, "Supervisor"))) {
-      setView("dashboard");
-    }
-  }, [session, view]);
-
-  if (checking) {
-    return <div className="flex h-screen items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={18} /> Memuat sesi...</div>;
-  }
-
   return (
     <ErrorBoundary>
-      <div className={`min-h-screen bg-slate-50 text-slate-800 flex font-sans ${!canPrint ? "print-blocked" : ""}`}>
-        <div className="print-only-notice">
-          Dokumen ini tidak bisa dicetak oleh akun Tamu atau publik tanpa login. Hubungi personil QC/QA untuk salinan resmi.
-        </div>
-        <style>{`
-          .only-print { display: none; }
-          .print-only-notice { display: none; }
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-          @media print {
-            .no-print, aside, header { display: none !important; }
-            .only-screen { display: none !important; }
-            .only-print { display: block !important; }
-            .print-card { box-shadow: none !important; border: 1px solid #cbd5e1 !important; page-break-inside: avoid !important; break-inside: avoid !important; }
-            .avoid-break { page-break-inside: avoid !important; break-inside: avoid !important; }
-            .print-content-shell {
-              padding-left: 0 !important;
-              margin-left: 0 !important;
-              width: 100% !important;
-              max-width: 100% !important;
-            }
-            .print-blocked > *:not(.print-only-notice) { display: none !important; }
-            .print-blocked .print-only-notice {
-              display: block !important;
-              padding: 5cm 2cm;
-              text-align: center;
-              font-size: 14px;
-              color: #334155;
-            }
-          }
-          @page {
-            margin: 1cm 1cm 1.5cm 1cm;
-          }
-          @page {
-            @bottom-right {
-              content: "Halaman " counter(page);
-              font-size: 9px;
-              color: #64748b;
-            }
-          }
-        `}</style>
-
-        {/* SIDEBAR DENGAN NO-PRINT & TEMA BIRU SLATE */}
-        <Sidebar
-          session={session}
-          view={view}
-          setView={setView}
-          facilityKey={facilityKey}
-          setFacilityKey={setFacilityKey}
-          status={statusIndex}
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-          hasAccess={hasAccess}
-        />
-
-        {/* KONTEN UTAMA DENGAN OFFSET DESKTOP lg:pl-72 & AUTO-RESET PADDING SAAT PRINT */}
-        <div className="flex-1 flex flex-col min-w-0 lg:pl-72 print-content-shell">
-          <HeaderBar
-            session={session}
-            onLoginClick={() => setShowLogin(true)}
-            onLogout={doLogout}
-            onProfileClick={() => setShowProfile(true)}
-            monthKey={monthKey}
-            setMonthKey={setMonthKey}
-            onToggleSidebar={() => setSidebarOpen(true)}
-          />
-
-          <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-            {view === "dashboard" ? (
-              <DashboardOverview
-                monthKey={monthKey}
-                setMonthKey={setMonthKey}
-                statusIndex={statusIndex}
-                loadingStatus={loadingStatus}
-                statusError={statusError}
-                onOpen={(key) => { setFacilityKey(key); setView("detail"); }}
-              />
-            ) : view === "activity" ? (
-              <ActivityLogPage token={session?.token} onBack={() => setView("dashboard")} />
-            ) : (
-              <FacilityDetail
-                facilityKey={facilityKey}
-                monthKey={monthKey}
-                setMonthKey={setMonthKey}
-                onBack={() => setView("dashboard")}
-                onSaved={() => refreshStatus(monthKey)}
-                session={session}
-                token={session?.token}
-              />
-            )}
-          </main>
-        </div>
-
-        {showLogin && <LoginModal onClose={() => setShowLogin(false)} onLogin={doLogin} />}
-        {showProfile && session && <ProfileModal session={session} onClose={() => setShowProfile(false)} />}
-      </div>
+      <AppContent />
     </ErrorBoundary>
   );
 }
