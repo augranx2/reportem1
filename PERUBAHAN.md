@@ -49,12 +49,16 @@ fasilitas. Sekarang:
 - Fungsi `buildNotifications()` menyusun daftar dari status seluruh fasilitas.
 - Ada halaman **Pusat Notifikasi** tersendiri; tiap item bisa diklik langsung ke
   fasilitas terkait.
-- **Periode yang dinilai adalah bulan lalu, bukan bulan berjalan.** Bulan yang
-  sedang berjalan masih dalam proses pengambilan sampel, jadi "belum ada data"
-  di bulan itu normal dan bukan temuan. Contoh: pada September 2026, notifikasi
-  mengevaluasi Agustus 2026. Periode ini juga tidak ikut berubah saat pemilih
-  bulan di header digeser; mengklik notifikasi otomatis memindahkan halaman ke
-  fasilitas dan periode yang bersangkutan.
+- **Periode notifikasi mengikuti pemilih bulan di header.** Ganti bulan ke Juli,
+  maka temuan Juli yang muncul. Mengklik notifikasi membuka fasilitas **dan**
+  periodenya sekaligus.
+- **Bulan yang masih berjalan diperlakukan khusus.** Untuk bulan berjalan, item
+  "belum ada data" dan pengingat Pengkajian EM tidak ditampilkan — samplingnya
+  memang belum selesai, jadi kalau ditampilkan hanya jadi peringatan palsu tiap
+  awal bulan. Temuan nyata (Alert/Action/Melebihi Syarat) tetap muncul. Sebagai
+  gantinya, saat bulan berjalan yang dipilih, **periode sebelumnya ikut
+  dievaluasi penuh** sehingga pengingat "bulan lalu belum lengkap" tetap sampai
+  tanpa perlu ganti bulan dulu. Tiap item diberi label periodenya masing-masing.
 - Isi notifikasi: hasil melebihi Syarat (merah), hasil mencapai Action/Alert
   Limit (kuning), belum ada data, serta pengingat khusus QA/Administrator soal
   Pengkajian EM yang belum disusun / belum final.

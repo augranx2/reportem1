@@ -1119,72 +1119,94 @@ const STATUS_TINT = {
 
 const STATUS_ACCENT = { 0: "#cbd5e1", 1: "#22c55e", 2: "#22c55e", 3: "#f97316", 4: "#ef4444" };
 
-// Menyusun daftar notifikasi dari status seluruh fasilitas pada bulan berjalan.
-// Sebelumnya komponen Sidebar/HeaderBar sudah punya UI notifikasi lengkap, tapi
-// tidak pernah ada yang mengirim datanya — jadi lonceng selalu kosong dan menu
-// "Pusat Notifikasi" nyasar ke halaman fasilitas. Fungsi ini yang mengisinya.
-function buildNotifications(statusIndex, monthKey, session) {
+// Menyusun daftar notifikasi dari status fasilitas pada satu atau beberapa
+// periode. Sebelumnya komponen Sidebar/HeaderBar sudah punya UI notifikasi
+// lengkap, tapi tidak pernah ada yang mengirim datanya — jadi lonceng selalu
+// kosong dan menu "Pusat Notifikasi" nyasar ke halaman fasilitas.
+//
+// Aturan periode:
+// - Notifikasi mengikuti periode yang dipilih di header, jadi kalau pemilih
+//   bulan digeser ke Juli, temuan Juli ikut muncul.
+// - Khusus untuk bulan yang MASIH BERJALAN, item "belum ada data" dan
+//   pengingat Pengkajian EM sengaja dilewati — periode itu belum selesai
+//   disampling sehingga datanya memang wajar belum lengkap, dan kalau
+//   ditampilkan hanya jadi peringatan palsu setiap awal bulan. Temuan nyata
+//   (Alert/Action/Melebihi Syarat) tetap ditampilkan karena itu berlaku
+//   kapan pun.
+// - Saat periode yang dipilih adalah bulan berjalan, periode sebelumnya ikut
+//   dievaluasi penuh supaya pengingat "bulan lalu belum lengkap" tetap
+//   sampai tanpa harus mengganti bulan dulu.
+function buildNotifications(statusByMonth, months, session, runningMonth) {
   if (!session) return [];
-  const periode = monthLabel(monthKey);
   const isQA = session.role === "Administrator" || session.departemen === "QA";
   const items = [];
 
-  FACILITIES.forEach((f) => {
-    const st = statusIndex?.[f.key];
-    const base = { facilityKey: f.key, facilityLabel: f.label, time: periode };
+  (months || []).forEach((month) => {
+    const statusIndex = statusByMonth?.[month];
+    if (!statusIndex) return;
+    const periode = monthLabel(month);
+    const berjalan = month === runningMonth;
 
-    if (!st?.hasData) {
-      items.push({
-        ...base,
-        type: "pending",
-        title: "Belum ada data pengujian",
-        desc: `Periode ${periode} sudah berakhir, namun belum ada satu pun titik sampling yang tercatat.`,
-      });
-      return;
-    }
+    FACILITIES.forEach((f) => {
+      const st = statusIndex[f.key];
+      const base = { facilityKey: f.key, facilityLabel: f.label, month, time: periode };
 
-    const level = st.level || 0;
-    if (level >= 4) {
-      items.push({
-        ...base,
-        type: "critical",
-        title: "Hasil melebihi batas Syarat",
-        desc: `Pada periode ${periode} terdapat titik yang melampaui batas Syarat (spesifikasi). Perlu investigasi dan pengujian ulang (re-sampling).`,
-      });
-    } else if (level === 3) {
-      items.push({
-        ...base,
-        type: "pending",
-        title: "Hasil mencapai Action Limit",
-        desc: `Hasil periode ${periode} masih di bawah batas Syarat, namun perlu dievaluasi pada hasil pengujian periode berikutnya.`,
-      });
-    } else if (level === 2) {
-      items.push({
-        ...base,
-        type: "pending",
-        title: "Hasil mencapai Alert Limit",
-        desc: `Hasil periode ${periode} masih di bawah batas Syarat, namun perlu dipantau agar tidak menunjukkan tren peningkatan.`,
-      });
-    }
+      if (!st?.hasData) {
+        if (berjalan) return; // periode belum selesai — bukan temuan
+        items.push({
+          ...base,
+          type: "pending",
+          title: "Belum ada data pengujian",
+          desc: `Periode ${periode} sudah berakhir, namun belum ada satu pun titik sampling yang tercatat.`,
+        });
+        return;
+      }
 
-    // Pengingat alur kerja khusus QA/Administrator.
-    if (isQA && !st.finalApproved) {
-      items.push({
-        ...base,
-        type: "qa_global",
-        title: st.hasReport ? "Pengkajian EM belum final" : "Pengkajian EM belum disusun",
-        desc: st.hasReport
-          ? `Draf Pengkajian EM periode ${periode} belum di-approve final (Mengetahui) oleh Manager QA.`
-          : st.formulirQCComplete
-            ? `Formulir QC periode ${periode} sudah lengkap — Pengkajian EM sudah bisa disusun.`
-            : `Menunggu Formulir QC (FM.QC.062) periode ${periode} selesai di-acc QC sebelum Pengkajian EM bisa dibuat.`,
-      });
-    }
+      const level = st.level || 0;
+      if (level >= 4) {
+        items.push({
+          ...base,
+          type: "critical",
+          title: "Hasil melebihi batas Syarat",
+          desc: `Pada periode ${periode} terdapat titik yang melampaui batas Syarat (spesifikasi). Perlu investigasi dan pengujian ulang (re-sampling).`,
+        });
+      } else if (level === 3) {
+        items.push({
+          ...base,
+          type: "pending",
+          title: "Hasil mencapai Action Limit",
+          desc: `Hasil periode ${periode} masih di bawah batas Syarat, namun perlu dievaluasi pada hasil pengujian periode berikutnya.`,
+        });
+      } else if (level === 2) {
+        items.push({
+          ...base,
+          type: "pending",
+          title: "Hasil mencapai Alert Limit",
+          desc: `Hasil periode ${periode} masih di bawah batas Syarat, namun perlu dipantau agar tidak menunjukkan tren peningkatan.`,
+        });
+      }
+
+      // Pengingat alur kerja khusus QA/Administrator.
+      if (isQA && !berjalan && !st.finalApproved) {
+        items.push({
+          ...base,
+          type: "qa_global",
+          title: st.hasReport ? "Pengkajian EM belum final" : "Pengkajian EM belum disusun",
+          desc: st.hasReport
+            ? `Draf Pengkajian EM periode ${periode} belum di-approve final (Mengetahui) oleh Manager QA.`
+            : st.formulirQCComplete
+              ? `Formulir QC periode ${periode} sudah lengkap — Pengkajian EM sudah bisa disusun.`
+              : `Menunggu Formulir QC (FM.QC.062) periode ${periode} selesai di-acc QC sebelum Pengkajian EM bisa dibuat.`,
+        });
+      }
+    });
   });
 
-  // Kritis dulu, lalu tugas QA, lalu sisanya.
+  // Kritis dulu, lalu tugas QA, lalu sisanya. Periode terbaru di atas.
   const order = { critical: 0, qa_global: 1, pending: 2 };
-  return items.sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9));
+  return items.sort(
+    (a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9) || b.month.localeCompare(a.month)
+  );
 }
 
 function DashboardOverview({ monthKey, setMonthKey, statusIndex, loadingStatus, statusError, onOpen }) {
@@ -2296,7 +2318,7 @@ const NOTIF_STYLE = {
   pending: { icon: Clock, color: "text-amber-600", tint: "bg-amber-50/50", border: "border-amber-200" },
 };
 
-function NotificationsPage({ notifications, monthKey, onOpenFacility, onBack }) {
+function NotificationsPage({ notifications, months = [], runningMonth, onOpenFacility, onBack }) {
   const criticalCount = notifications.filter((n) => n.type === "critical").length;
 
   return (
@@ -2309,7 +2331,8 @@ function NotificationsPage({ notifications, monthKey, onOpenFacility, onBack }) 
         <div>
           <h2 className="text-base font-bold text-slate-800">Pusat Notifikasi &amp; Alert</h2>
           <p className="text-xs text-slate-400">
-            Evaluasi periode terakhir yang sudah selesai — <b className="text-slate-600">{monthLabel(monthKey)}</b>
+            Periode yang dievaluasi:{" "}
+            <b className="text-slate-600">{months.map((m) => monthLabel(m)).join(" & ")}</b>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -2325,9 +2348,11 @@ function NotificationsPage({ notifications, monthKey, onOpenFacility, onBack }) 
       </div>
 
       <p className="px-1 text-[11px] leading-relaxed text-slate-400">
-        Notifikasi selalu menilai periode bulan lalu, bukan bulan yang sedang dipilih di header —
-        bulan berjalan masih dalam proses pengambilan sampel sehingga datanya memang belum lengkap.
-        Klik salah satu item untuk langsung membuka fasilitas terkait pada periode {monthLabel(monthKey)}.
+        Notifikasi mengikuti periode yang dipilih di header — ganti bulannya untuk melihat temuan
+        periode lain. Untuk bulan yang masih berjalan, item &quot;belum ada data&quot; dan pengingat
+        Pengkajian EM tidak ditampilkan karena samplingnya memang belum selesai; sebagai gantinya
+        periode sebelumnya ikut dievaluasi. Klik salah satu item untuk membuka fasilitas dan
+        periodenya langsung.
       </p>
 
       {notifications.length === 0 ? (
@@ -2335,7 +2360,7 @@ function NotificationsPage({ notifications, monthKey, onOpenFacility, onBack }) 
           <CheckCircle2 size={26} className="mx-auto text-emerald-500" />
           <p className="text-sm font-semibold text-slate-700">Semua parameter terkendali</p>
           <p className="text-xs text-slate-400">
-            Tidak ada deviasi batas limit ataupun tugas evaluasi yang tertunda untuk periode {monthLabel(monthKey)}.
+            Tidak ada deviasi batas limit ataupun tugas evaluasi yang tertunda pada periode yang dievaluasi.
           </p>
         </div>
       ) : (
@@ -2346,7 +2371,7 @@ function NotificationsPage({ notifications, monthKey, onOpenFacility, onBack }) 
             return (
               <button
                 key={idx}
-                onClick={() => onOpenFacility(item.facilityKey)}
+                onClick={() => onOpenFacility(item.facilityKey, item.month)}
                 className={`flex w-full items-start gap-3 rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${style.border} ${style.tint}`}
               >
                 <Icon size={18} className={`mt-0.5 shrink-0 ${style.color}`} />
@@ -2356,9 +2381,16 @@ function NotificationsPage({ notifications, monthKey, onOpenFacility, onBack }) 
                     <span className="text-[10px] text-slate-400">{item.time}</span>
                   </div>
                   <p className="text-xs leading-relaxed text-slate-600">{item.desc}</p>
-                  <span className="inline-block rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
-                    {item.facilityLabel}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="inline-block rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                      {item.facilityLabel}
+                    </span>
+                    {item.month === runningMonth && (
+                      <span className="inline-block rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                        bulan berjalan
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <ChevronRight size={16} className="mt-1 shrink-0 text-slate-300" />
               </button>
@@ -2522,31 +2554,37 @@ function App() {
     if (view === "dashboard") refreshStatus(monthKey);
   }, [view, monthKey, refreshStatus]);
 
-  // Notifikasi SELALU mengevaluasi bulan lalu, bukan bulan yang sedang dipilih
-  // di header. Alasannya: bulan berjalan masih dalam proses pengambilan sampel,
-  // jadi "belum ada data" pada bulan berjalan itu normal dan bukan temuan —
-  // yang perlu diingatkan adalah periode terakhir yang sudah selesai.
-  const notifMonthKey = useMemo(() => prevMonthKey(currentMonthKey()), []);
-  const [notifStatus, setNotifStatus] = useState({});
+  // Periode yang dievaluasi notifikasi: mengikuti bulan yang dipilih di header.
+  // Kalau yang dipilih adalah bulan yang sedang berjalan, periode sebelumnya
+  // ikut dievaluasi supaya pengingat "bulan lalu belum lengkap" tetap sampai
+  // tanpa perlu mengganti bulan lebih dulu.
+  const runningMonth = useMemo(() => currentMonthKey(), []);
+  const notifMonths = useMemo(
+    () => (monthKey === runningMonth ? [prevMonthKey(monthKey), monthKey] : [monthKey]),
+    [monthKey, runningMonth]
+  );
+  const [notifStatusByMonth, setNotifStatusByMonth] = useState({});
 
   const refreshNotifStatus = useCallback(async () => {
     try {
-      const idx = await fetchStatusIndex(notifMonthKey);
-      setNotifStatus(idx);
+      const results = await Promise.all(
+        notifMonths.map((m) => fetchStatusIndex(m).then((idx) => [m, idx]))
+      );
+      setNotifStatusByMonth(Object.fromEntries(results));
     } catch {
       // Notifikasi bersifat pelengkap — kalau gagal dimuat, jangan sampai
       // mengganggu halaman utama. Error status utama tetap ditampilkan sendiri.
     }
-  }, [notifMonthKey]);
+  }, [notifMonths]);
 
   useEffect(() => {
     if (session) refreshNotifStatus();
-    else setNotifStatus({});
+    else setNotifStatusByMonth({});
   }, [session, refreshNotifStatus]);
 
   const notifications = useMemo(
-    () => buildNotifications(notifStatus, notifMonthKey, session),
-    [notifStatus, notifMonthKey, session]
+    () => buildNotifications(notifStatusByMonth, notifMonths, session, runningMonth),
+    [notifStatusByMonth, notifMonths, session, runningMonth]
   );
 
   const openFacility = useCallback((key, month) => {
@@ -2634,7 +2672,7 @@ function App() {
             setMonthKey={setMonthKey}
             onToggleSidebar={() => setSidebarOpen(true)}
             notifications={notifications}
-            onSelectNotification={(item) => openFacility(item.facilityKey, notifMonthKey)}
+            onSelectNotification={(item) => openFacility(item.facilityKey, item.month)}
           />
 
           <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
@@ -2650,8 +2688,9 @@ function App() {
             ) : view === "notifications" ? (
               <NotificationsPage
                 notifications={notifications}
-                monthKey={notifMonthKey}
-                onOpenFacility={(key) => openFacility(key, notifMonthKey)}
+                months={notifMonths}
+                runningMonth={runningMonth}
+                onOpenFacility={openFacility}
                 onBack={() => setView("dashboard")}
               />
             ) : view === "activity" ? (
