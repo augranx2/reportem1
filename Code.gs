@@ -118,13 +118,19 @@ const ROLE_LEVEL = { Tamu: 1, Staff: 2, Supervisor: 3, Manager: 4, "Assistant Ma
 // ---------------------------------------------------------------------------
 
 // Aksi baca yang boleh diakses TANPA login. Sisanya wajib membawa token sesi
-// yang masih berlaku. Sebelumnya "master", "entries", dan "statusIndex" bisa
-// dipanggil siapa saja — cukup membuka URL /exec dengan parameter yang benar —
-// sehingga seluruh data hasil pengujian bisa dibaca publik tanpa akun.
+// yang masih berlaku. Sebelumnya "master" dan "entries" bisa dipanggil siapa
+// saja — cukup membuka URL /exec dengan parameter yang benar — sehingga seluruh
+// data hasil pengujian bisa dibaca publik tanpa akun.
+//
+// "statusIndex" sengaja dibiarkan publik karena isinya hanya ringkasan status
+// per fasilitas (terkendali / alert / action / belum ada data) untuk Dashboard
+// Global — tidak memuat satu pun angka hasil pengujian, ruangan, atau tanggal
+// sampling. Untuk melihat rinciannya tetap harus login.
 const PUBLIC_GET_ACTIONS = [
-  "login",   // tidak dipakai di doGet, ditulis agar niatnya jelas
-  "whoami",  // dipakai untuk memvalidasi token yang tersimpan di browser
-  "verify",  // halaman /verify hasil scan QR — hanya info tanda tangan
+  "login",       // tidak dipakai di doGet, ditulis agar niatnya jelas
+  "whoami",      // dipakai untuk memvalidasi token yang tersimpan di browser
+  "verify",      // halaman /verify hasil scan QR — hanya info tanda tangan
+  "statusIndex", // ringkasan status untuk Dashboard Global
 ];
 
 function requireSessionForGet_(e) {

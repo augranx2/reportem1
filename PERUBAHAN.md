@@ -25,12 +25,15 @@ langsung dengan parameter yang benar. Sekarang:
   *"Silakan masuk terlebih dahulu untuk melihat data pengujian."* Ini pengamanan
   yang sesungguhnya — memblokir di sisi tampilan saja tidak cukup karena API-nya
   masih bisa dipanggil langsung.
-- **Pengecualian yang tetap publik**: `whoami` (memvalidasi token tersimpan) dan
-  `verify` — halaman hasil scan QR tetap bisa dibuka siapa saja, dan seperti
-  sebelumnya hanya menampilkan info tanda tangan, bukan isi narasi/formulir.
-- **Di website**: pengunjung tanpa login melihat layar **"Masuk untuk melihat
-  data"** dengan tombol Masuk, menggantikan seluruh isi halaman. Banner "mode
-  publik" yang lama sudah tidak berlaku lagi.
+- **Yang tetap publik**: `statusIndex` (ringkasan status untuk **Dashboard
+  Global** — tidak memuat satu pun angka hasil pengujian, nama ruangan, atau
+  tanggal sampling), `whoami` (memvalidasi token tersimpan), dan `verify` —
+  halaman hasil scan QR tetap bisa dibuka siapa saja dan hanya menampilkan info
+  tanda tangan.
+- **Di website**: Dashboard Global tetap bisa dilihat tanpa login. Begitu masuk
+  ke detail fasilitas, pengunjung tanpa akun melihat layar **"Masuk untuk
+  melihat detail fasilitas"**. Banner "mode publik" yang lama sudah tidak
+  berlaku lagi.
 
 > ⚠️ Perubahan ini hanya aktif setelah `Code.gs` ditempel ulang dan
 > **di-deploy versi baru** di Apps Script.

@@ -2321,29 +2321,38 @@ const NOTIF_STYLE = {
 // Layar pengganti seluruh isi halaman ketika belum ada sesi login. Sebelumnya
 // pengunjung tanpa akun tetap bisa melihat tabel hasil pengujian dalam "mode
 // publik"; sekarang data pengujian hanya bisa diakses setelah login.
-function LoginRequired({ onLogin }) {
+function LoginRequired({ onLogin, onBack }) {
   return (
-    <div className="mx-auto max-w-lg space-y-4 rounded-3xl border border-slate-200/80 bg-white p-10 text-center shadow-sm">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
-        <Lock size={22} />
-      </div>
-      <div className="space-y-1.5">
-        <h2 className="text-lg font-bold text-slate-800">Masuk untuk melihat data</h2>
-        <p className="text-sm leading-relaxed text-slate-500">
-          Data hasil pengujian Environment Monitoring (EM) Viable bersifat internal dan hanya
-          dapat diakses oleh personil PT. Rama Emerald Multi Sukses yang sudah memiliki akun.
+    <div className="space-y-4">
+      {onBack && (
+        <button onClick={onBack} className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-slate-800">
+          <ChevronLeft size={16} /> Kembali ke Dashboard
+        </button>
+      )}
+      <div className="mx-auto max-w-lg space-y-4 rounded-3xl border border-slate-200/80 bg-white p-10 text-center shadow-sm">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+          <Lock size={22} />
+        </div>
+        <div className="space-y-1.5">
+          <h2 className="text-lg font-bold text-slate-800">Masuk untuk melihat detail fasilitas</h2>
+          <p className="text-sm leading-relaxed text-slate-500">
+            Tanpa login Anda hanya dapat melihat <b className="text-slate-700">Dashboard Global</b>,
+            yaitu ringkasan status tiap fasilitas. Rincian hasil pengujian, grafik tren, dan
+            pengkajian EM bersifat internal dan hanya dapat diakses oleh personil
+            PT. Rama Emerald Multi Sukses yang sudah memiliki akun.
+          </p>
+        </div>
+        <button
+          onClick={onLogin}
+          className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800"
+        >
+          <LogIn size={16} /> Masuk
+        </button>
+        <p className="text-[11px] leading-relaxed text-slate-400">
+          Belum punya akun? Hubungi QA Mikrobiologi atau Administrator sistem.
+          Verifikasi keaslian dokumen lewat QR code tetap bisa dilakukan tanpa login.
         </p>
       </div>
-      <button
-        onClick={onLogin}
-        className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800"
-      >
-        <LogIn size={16} /> Masuk
-      </button>
-      <p className="text-[11px] leading-relaxed text-slate-400">
-        Belum punya akun? Hubungi QA Mikrobiologi atau Administrator sistem.
-        Verifikasi keaslian dokumen lewat QR code tetap bisa dilakukan tanpa login.
-      </p>
     </div>
   );
 }
@@ -2567,8 +2576,9 @@ function App() {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [statusError, setStatusError] = useState("");
 
+  // Dashboard Global sengaja tetap bisa dimuat tanpa login — isinya hanya
+  // ringkasan status per fasilitas, bukan angka hasil pengujian.
   const refreshStatus = useCallback(async (month) => {
-    if (!session) { setStatusIndex({}); return; }
     setLoadingStatus(true);
     setStatusError("");
     try {
@@ -2707,9 +2717,7 @@ function App() {
           />
 
           <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-            {!session ? (
-              <LoginRequired onLogin={() => setShowLogin(true)} />
-            ) : view === "dashboard" ? (
+            {view === "dashboard" ? (
               <DashboardOverview
                 monthKey={monthKey}
                 setMonthKey={setMonthKey}
@@ -2728,6 +2736,8 @@ function App() {
               />
             ) : view === "activity" ? (
               <ActivityLogPage session={session} token={session?.token} onBack={() => setView("dashboard")} />
+            ) : !session ? (
+              <LoginRequired onLogin={() => setShowLogin(true)} onBack={() => setView("dashboard")} />
             ) : (
               <FacilityDetail
                 facilityKey={facilityKey}
