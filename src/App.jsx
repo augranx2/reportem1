@@ -249,6 +249,11 @@ function buildStatsSummary(classes, entries) {
   return summary;
 }
 
+function currentMonthKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -1133,7 +1138,7 @@ function buildNotifications(statusIndex, monthKey, session) {
         ...base,
         type: "pending",
         title: "Belum ada data pengujian",
-        desc: `Belum ada satu pun titik sampling yang tercatat untuk periode ${periode}.`,
+        desc: `Periode ${periode} sudah berakhir, namun belum ada satu pun titik sampling yang tercatat.`,
       });
       return;
     }
@@ -1144,21 +1149,21 @@ function buildNotifications(statusIndex, monthKey, session) {
         ...base,
         type: "critical",
         title: "Hasil melebihi batas Syarat",
-        desc: "Terdapat titik yang melampaui batas Syarat (spesifikasi). Perlu investigasi dan pengujian ulang (re-sampling).",
+        desc: `Pada periode ${periode} terdapat titik yang melampaui batas Syarat (spesifikasi). Perlu investigasi dan pengujian ulang (re-sampling).`,
       });
     } else if (level === 3) {
       items.push({
         ...base,
         type: "pending",
         title: "Hasil mencapai Action Limit",
-        desc: "Masih di bawah batas Syarat, namun perlu dievaluasi pada hasil pengujian periode berikutnya.",
+        desc: `Hasil periode ${periode} masih di bawah batas Syarat, namun perlu dievaluasi pada hasil pengujian periode berikutnya.`,
       });
     } else if (level === 2) {
       items.push({
         ...base,
         type: "pending",
         title: "Hasil mencapai Alert Limit",
-        desc: "Masih di bawah batas Syarat, namun perlu dipantau agar tidak menunjukkan tren peningkatan.",
+        desc: `Hasil periode ${periode} masih di bawah batas Syarat, namun perlu dipantau agar tidak menunjukkan tren peningkatan.`,
       });
     }
 
@@ -2304,7 +2309,7 @@ function NotificationsPage({ notifications, monthKey, onOpenFacility, onBack }) 
         <div>
           <h2 className="text-base font-bold text-slate-800">Pusat Notifikasi &amp; Alert</h2>
           <p className="text-xs text-slate-400">
-            Ringkasan status dan tugas yang perlu ditindaklanjuti — periode {monthLabel(monthKey)}
+            Evaluasi periode terakhir yang sudah selesai — <b className="text-slate-600">{monthLabel(monthKey)}</b>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -2319,11 +2324,19 @@ function NotificationsPage({ notifications, monthKey, onOpenFacility, onBack }) 
         </div>
       </div>
 
+      <p className="px-1 text-[11px] leading-relaxed text-slate-400">
+        Notifikasi selalu menilai periode bulan lalu, bukan bulan yang sedang dipilih di header —
+        bulan berjalan masih dalam proses pengambilan sampel sehingga datanya memang belum lengkap.
+        Klik salah satu item untuk langsung membuka fasilitas terkait pada periode {monthLabel(monthKey)}.
+      </p>
+
       {notifications.length === 0 ? (
         <div className="space-y-1.5 rounded-3xl border border-dashed border-slate-200 bg-white p-12 text-center">
           <CheckCircle2 size={26} className="mx-auto text-emerald-500" />
           <p className="text-sm font-semibold text-slate-700">Semua parameter terkendali</p>
-          <p className="text-xs text-slate-400">Tidak ada deviasi batas limit ataupun tugas evaluasi yang tertunda.</p>
+          <p className="text-xs text-slate-400">
+            Tidak ada deviasi batas limit ataupun tugas evaluasi yang tertunda untuk periode {monthLabel(monthKey)}.
+          </p>
         </div>
       ) : (
         <div className="space-y-2.5">
@@ -2506,16 +2519,39 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (view === "dashboard" || view === "notifications") refreshStatus(monthKey);
+    if (view === "dashboard") refreshStatus(monthKey);
   }, [view, monthKey, refreshStatus]);
 
+  // Notifikasi SELALU mengevaluasi bulan lalu, bukan bulan yang sedang dipilih
+  // di header. Alasannya: bulan berjalan masih dalam proses pengambilan sampel,
+  // jadi "belum ada data" pada bulan berjalan itu normal dan bukan temuan —
+  // yang perlu diingatkan adalah periode terakhir yang sudah selesai.
+  const notifMonthKey = useMemo(() => prevMonthKey(currentMonthKey()), []);
+  const [notifStatus, setNotifStatus] = useState({});
+
+  const refreshNotifStatus = useCallback(async () => {
+    try {
+      const idx = await fetchStatusIndex(notifMonthKey);
+      setNotifStatus(idx);
+    } catch {
+      // Notifikasi bersifat pelengkap — kalau gagal dimuat, jangan sampai
+      // mengganggu halaman utama. Error status utama tetap ditampilkan sendiri.
+    }
+  }, [notifMonthKey]);
+
+  useEffect(() => {
+    if (session) refreshNotifStatus();
+    else setNotifStatus({});
+  }, [session, refreshNotifStatus]);
+
   const notifications = useMemo(
-    () => buildNotifications(statusIndex, monthKey, session),
-    [statusIndex, monthKey, session]
+    () => buildNotifications(notifStatus, notifMonthKey, session),
+    [notifStatus, notifMonthKey, session]
   );
 
-  const openFacility = useCallback((key) => {
+  const openFacility = useCallback((key, month) => {
     setFacilityKey(key);
+    if (month) setMonthKey(month);
     setView("detail");
   }, []);
 
@@ -2598,7 +2634,7 @@ function App() {
             setMonthKey={setMonthKey}
             onToggleSidebar={() => setSidebarOpen(true)}
             notifications={notifications}
-            onSelectNotification={(item) => openFacility(item.facilityKey)}
+            onSelectNotification={(item) => openFacility(item.facilityKey, notifMonthKey)}
           />
 
           <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
@@ -2614,8 +2650,8 @@ function App() {
             ) : view === "notifications" ? (
               <NotificationsPage
                 notifications={notifications}
-                monthKey={monthKey}
-                onOpenFacility={openFacility}
+                monthKey={notifMonthKey}
+                onOpenFacility={(key) => openFacility(key, notifMonthKey)}
                 onBack={() => setView("dashboard")}
               />
             ) : view === "activity" ? (
@@ -2626,7 +2662,7 @@ function App() {
                 monthKey={monthKey}
                 setMonthKey={setMonthKey}
                 onBack={() => setView("dashboard")}
-                onSaved={() => refreshStatus(monthKey)}
+                onSaved={() => { refreshStatus(monthKey); refreshNotifStatus(); }}
                 session={session}
                 token={session?.token}
               />
