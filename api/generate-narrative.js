@@ -73,9 +73,20 @@ Balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain) dengan struktur 
   "kesimpulanUmum": "ringkasan akhir seluruh kelas sesuai ketentuan di atas"
 }`;
 
-  try {
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+  // Nama model sebelumnya ditulis "gemini-3.6-flash" — nama itu tidak ada di
+  // katalog Gemini API, jadi setiap permintaan pasti gagal 404 dan website
+  // selalu jatuh ke narasi otomatis non-AI. Sekarang model bisa diatur lewat
+  // Environment Variable GEMINI_MODEL di Vercel, dan kalau model utama tidak
+  // tersedia, kode akan mencoba daftar cadangan di bawah secara berurutan.
+  const models = [
+    process.env.GEMINI_MODEL,
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+  ].filter(Boolean);
+
+  async function callGemini(model) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -85,13 +96,31 @@ Balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain) dengan struktur 
         }),
       }
     );
-
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      throw new Error(`Gemini API error (HTTP ${geminiRes.status}): ${errText}`);
+    if (!res.ok) {
+      const errText = await res.text();
+      const err = new Error(`Gemini API error (HTTP ${res.status}) pada model "${model}": ${errText}`);
+      err.status = res.status;
+      throw err;
     }
+    return res.json();
+  }
 
-    const data = await geminiRes.json();
+  try {
+    let data = null;
+    let lastErr = null;
+    for (const model of models) {
+      try {
+        data = await callGemini(model);
+        break;
+      } catch (err) {
+        lastErr = err;
+        // 404 = model tidak dikenal, 403 = tidak punya akses ke model itu.
+        // Selain itu (kuota habis, error jaringan) tidak ada gunanya mencoba
+        // model lain, jadi langsung dilempar.
+        if (err.status !== 404 && err.status !== 403) throw err;
+      }
+    }
+    if (!data) throw lastErr || new Error("Tidak ada model Gemini yang bisa dipakai.");
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     const cleanText = text

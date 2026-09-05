@@ -2,28 +2,18 @@
 // dan Kesimpulan Umum berbasis analisis data terinput, mengikuti gaya
 // bahasa & struktur pembahasan farmasi (Settle Plate / Contact Plate /
 // Air Sampler per kelas, lalu Kesimpulan per kelas, lalu Kesimpulan Umum).
+//
+// Tabel LIMITS & helper hitung status di-import dari ./limits.js supaya
+// tidak ada lagi salinan ganda yang bisa tidak sinkron.
 
-const PARAM_DEFS = [
-  { key: "settle", label: "Cawan Papar (Settle Plate)", short: "Settle Plate" },
-  { key: "contact", label: "Cawan Kontak (Contact Plate)", short: "Contact Plate" },
-  { key: "air", label: "Air Sampler", short: "Air Sampler" },
-];
-
-const LIMITS = [
-  { parameter: "settle", kelas: "E", syarat: 200, alert: 88, action: 119 },
-  { parameter: "settle", kelas: "D", syarat: 100, alert: 70, action: 95 },
-  { parameter: "contact", kelas: "D", syarat: 50, alert: 9, action: 13 },
-  { parameter: "air", kelas: "D", syarat: 200, alert: 138, action: 176 },
-  { parameter: "settle", kelas: "C", syarat: 50, alert: 13, action: 18 },
-  { parameter: "contact", kelas: "C", syarat: 25, alert: 14, action: 20 },
-  { parameter: "air", kelas: "C", syarat: 100, alert: 51, action: 68 },
-  { parameter: "settle", kelas: "B", syarat: 5, alert: 2, action: 3 },
-  { parameter: "contact", kelas: "B", syarat: 5, alert: 2, action: 3 },
-  { parameter: "air", kelas: "B", syarat: 10, alert: 5, action: 7 },
-  { parameter: "settle", kelas: "A", syarat: 1, alert: 1, action: 1, lessThan: true },
-  { parameter: "contact", kelas: "A", syarat: 1, alert: 1, action: 1, lessThan: true },
-  { parameter: "air", kelas: "A", syarat: 1, alert: 1, action: 1, lessThan: true },
-];
+import {
+  PARAM_DEFS,
+  getLimit,
+  parseNumericValue,
+  getStatusLevel,
+  displayValue,
+  fullDateID,
+} from "./limits.js";
 
 const KELAS_INTRO = {
   E: "Kelas E merupakan area pendukung umum pada fasilitas produksi dengan tingkat pengendalian lingkungan paling dasar.",
@@ -32,59 +22,6 @@ const KELAS_INTRO = {
   B: "Kelas B merupakan area latar belakang untuk proses aseptik sehingga memerlukan tingkat pengendalian lingkungan yang lebih ketat.",
   A: "Kelas A merupakan area paling kritis yang digunakan untuk proses aseptik sehingga memerlukan kondisi lingkungan dengan tingkat kebersihan tertinggi.",
 };
-
-const MONTHS_ID = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-
-function getLimit(parameter, kelas) {
-  return LIMITS.find((l) => l.parameter === parameter && l.kelas === kelas) || null;
-}
-
-function parseNumericValue(rawValue) {
-  if (rawValue === null || rawValue === undefined || rawValue === "") return null;
-  const str = String(rawValue).trim();
-  const lessThanMatch = str.match(/^<\s*([\d.]+)$/);
-  if (lessThanMatch) {
-    const n = Number(lessThanMatch[1]);
-    return Number.isNaN(n) ? null : n - 0.001;
-  }
-  const n = Number(str);
-  return Number.isNaN(n) ? null : n;
-}
-
-function getStatus(rawValue, parameter, kelas) {
-  const limit = getLimit(parameter, kelas);
-  if (!limit) return { level: 0, label: "N/A" };
-  if (rawValue === null || rawValue === undefined || rawValue === "")
-    return { level: 0, label: "Belum diuji" };
-  const v = parseNumericValue(rawValue);
-  if (v === null) return { level: 0, label: "N/A" };
-  if (limit.lessThan) {
-    return v < 1
-      ? { level: 1, label: "Terkendali" }
-      : { level: 4, label: "Melebihi Syarat" };
-  }
-  if (v < limit.alert) return { level: 1, label: "Terkendali" };
-  if (v < limit.action) return { level: 2, label: "Alert" };
-  if (v < limit.syarat) return { level: 3, label: "Action" };
-  return { level: 4, label: "Melebihi Syarat" };
-}
-
-function displayValue(rawValue, kelas, parameter) {
-  const limit = getLimit(parameter, kelas);
-  if (!limit) return "N/A";
-  if (rawValue === null || rawValue === undefined || rawValue === "") return "-";
-  const str = String(rawValue).trim();
-  if (/^<\s*[\d.]+$/.test(str)) return str.replace(/\s+/g, "");
-  if (limit.lessThan && Number(rawValue) < 1) return "<1";
-  return String(rawValue);
-}
-
-function fullDateID(iso) {
-  if (!iso) return "";
-  const [y, m, d] = String(iso).split("-");
-  if (!y || !m || !d) return iso;
-  return `${d} ${MONTHS_ID[Number(m) - 1] || m} ${y}`;
-}
 
 // Narasi 1 sub-bagian parameter (Settle Plate / Contact Plate / Air Sampler)
 // untuk 1 kelas — mengikuti gaya: sebutkan nilai tertinggi (lokasi + tanggal),
@@ -113,14 +50,14 @@ function paramNarrative(paramKey, paramShort, kelas, kelasEntries) {
     .map((p) => `${p.room} : ${displayValue(p.raw, kelas, paramKey)} CFU (${fullDateID(p.tanggal)})`)
     .join("; ");
 
-  const breachPoints = points.filter((p) => getStatus(p.raw, paramKey, kelas).level >= 2);
+  const breachPoints = points.filter((p) => getStatusLevel(p.raw, paramKey, kelas) >= 2);
 
   let text = `Hasil monitoring ${paramShort.toLowerCase()} menunjukkan nilai tertinggi pada ${topStr}. `;
 
   if (breachPoints.length === 0) {
     text += `Seluruh hasil masih berada di bawah Alert Limit (${limit.alert} CFU) dan Action Limit (${limit.action} CFU), sehingga kondisi lingkungan untuk parameter ini masih memenuhi persyaratan yang ditetapkan.`;
   } else {
-    const highestLevel = Math.max(...breachPoints.map((p) => getStatus(p.raw, paramKey, kelas).level));
+    const highestLevel = Math.max(...breachPoints.map((p) => getStatusLevel(p.raw, paramKey, kelas)));
     const uniqueDates = new Set(breachPoints.map((p) => p.tanggal));
     const recurring = uniqueDates.size > 1;
 
@@ -173,9 +110,9 @@ export function generateLocalNarrative({ facilityLabel, monthLabel, classes, ent
         if (!limit) return;
         const val = e[p.key];
         if (val === null || val === undefined || val === "" || val === "-") return;
-        const st = getStatus(val, p.key, k);
-        if (st.level >= 2) {
-          const breachObj = { kelas: k, roomName: e.roomName || "Ruangan", tanggal: e.tanggal, parameter: p.short, value: displayValue(val, k, p.key), level: st.level, label: st.label };
+        const level = getStatusLevel(val, p.key, k);
+        if (level >= 2) {
+          const breachObj = { kelas: k, roomName: e.roomName || "Ruangan", tanggal: e.tanggal, parameter: p.short, value: displayValue(val, k, p.key), level };
           breachesInClass.push(breachObj);
           allBreaches.push(breachObj);
         }

@@ -21,49 +21,28 @@ import {
   ChevronLeft,
   Lock,
   History,
-  Save,
-  FileCheck2,
-  ClipboardList,
   Printer,
   Sparkles,
   Calendar,
   Trash2,
-  CheckCheck,
   CheckCircle2,
   ChevronRight,
   ChevronDown,
   AlertTriangle,
-  KeyRound,
   LayoutDashboard,
   Menu,
   X,
   ShieldCheck,
-  Activity,
-  Layers,
-  ArrowLeft,
-  Boxes,
-  Download,
   FlaskConical,
-  Microscope,
-  Stethoscope,
-  Warehouse,
-  PackageCheck,
-  Map,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
   Bell,
   AlertOctagon,
   Clock,
   FileText,
-  Thermometer,
-  Droplets,
-  Gauge,
-  FileSpreadsheet,
   Plus,
   LayoutGrid,
   XOctagon,
   FileQuestion,
+  Download,
 } from "lucide-react";
 import {
   fetchMaster,
@@ -84,6 +63,21 @@ import {
 } from "./api.js";
 import { generateLocalNarrative } from "./narrativeGenerator.js";
 import { useAuth, hasAccess } from "./auth.js";
+import {
+  CLASS_ORDER,
+  PARAM_DEFS,
+  LIMITS,
+  LEVEL_LABEL,
+  getLimit,
+  parseNumericValue,
+  getStatus,
+  displayValue,
+  shortDate,
+  fullDateID,
+  monthLabel,
+  prevMonthKey,
+  todayISO,
+} from "./limits.js";
 
 /* =========================================================================
    1. ERROR BOUNDARY
@@ -158,30 +152,6 @@ const VIABLE_GROUPS = [
   { key: "qc", title: "Laboratorium QC", singleKey: "labMikro", icon: FlaskConical },
 ];
 
-const CLASS_ORDER = ["E", "D", "C", "B", "A"];
-
-const PARAM_DEFS = [
-  { key: "settle", label: "Cawan Papar (Settle Plate)", short: "Settle Plate" },
-  { key: "contact", label: "Cawan Kontak (Contact Plate)", short: "Contact Plate" },
-  { key: "air", label: "Air Sampler", short: "Air Sampler" },
-];
-
-const LIMITS = [
-  { parameter: "settle", kelas: "E", syarat: 200, alert: 88, action: 119 },
-  { parameter: "settle", kelas: "D", syarat: 100, alert: 70, action: 95 },
-  { parameter: "contact", kelas: "D", syarat: 50, alert: 9, action: 13 },
-  { parameter: "air", kelas: "D", syarat: 200, alert: 138, action: 176 },
-  { parameter: "settle", kelas: "C", syarat: 50, alert: 13, action: 18 },
-  { parameter: "contact", kelas: "C", syarat: 25, alert: 14, action: 20 },
-  { parameter: "air", kelas: "C", syarat: 100, alert: 51, action: 68 },
-  { parameter: "settle", kelas: "B", syarat: 5, alert: 2, action: 3 },
-  { parameter: "contact", kelas: "B", syarat: 5, alert: 2, action: 3 },
-  { parameter: "air", kelas: "B", syarat: 10, alert: 5, action: 7 },
-  { parameter: "settle", kelas: "A", syarat: 1, alert: 1, action: 1, lessThan: true },
-  { parameter: "contact", kelas: "A", syarat: 1, alert: 1, action: 1, lessThan: true },
-  { parameter: "air", kelas: "A", syarat: 1, alert: 1, action: 1, lessThan: true },
-];
-
 /* =========================================================================
    3. QR VERIFIKASI DIGITAL (/verify)
    ========================================================================= */
@@ -207,50 +177,6 @@ function VerifyQR({ type, facility, period, slot, size = 84 }) {
 /* =========================================================================
    4. HELPERS
    ========================================================================= */
-function parseNumericValue(rawValue) {
-  if (rawValue === null || rawValue === undefined || rawValue === "") return null;
-  const str = String(rawValue).trim();
-  const lessThanMatch = str.match(/^<\s*([\d.]+)$/);
-  if (lessThanMatch) {
-    const n = Number(lessThanMatch[1]);
-    return Number.isNaN(n) ? null : n - 0.001;
-  }
-  const n = Number(str);
-  return Number.isNaN(n) ? null : n;
-}
-
-function getLimit(parameter, kelas) {
-  return LIMITS.find((l) => l.parameter === parameter && l.kelas === kelas) || null;
-}
-
-function getStatus(rawValue, parameter, kelas) {
-  const limit = getLimit(parameter, kelas);
-  if (!limit) return { level: 0, label: "N/A", color: "#64748b", bg: "#f1f5f9", dot: "#52525b" };
-  if (rawValue === null || rawValue === undefined || rawValue === "")
-    return { level: 0, label: "Belum diuji", color: "#64748b", bg: "#f1f5f9", dot: "#52525b" };
-  const v = parseNumericValue(rawValue);
-  if (v === null) return { level: 0, label: "N/A", color: "#64748b", bg: "#f1f5f9", dot: "#52525b" };
-  if (limit.lessThan) {
-    return v < 1
-      ? { level: 1, label: "Terkendali", color: "#15803d", bg: "#dcfce7", dot: "#22c55e" }
-      : { level: 4, label: "Melebihi Syarat", color: "#b91c1c", bg: "#fee2e2", dot: "#ef4444" };
-  }
-  if (v < limit.alert) return { level: 1, label: "Terkendali", color: "#15803d", bg: "#dcfce7", dot: "#22c55e" };
-  if (v < limit.action) return { level: 2, label: "Alert", color: "#b45309", bg: "#fef3c7", dot: "#f59e0b" };
-  if (v < limit.syarat) return { level: 3, label: "Action", color: "#c2410c", bg: "#ffedd5", dot: "#f97316" };
-  return { level: 4, label: "Melebihi Syarat", color: "#b91c1c", bg: "#fee2e2", dot: "#ef4444" };
-}
-
-function displayValue(rawValue, kelas, parameter) {
-  const limit = getLimit(parameter, kelas);
-  if (!limit) return "N/A";
-  if (rawValue === null || rawValue === undefined || rawValue === "") return "-";
-  const str = String(rawValue).trim();
-  if (/^<\s*[\d.]+$/.test(str)) return str.replace(/\s+/g, "");
-  if (limit.lessThan && Number(rawValue) < 1) return "<1";
-  return String(rawValue);
-}
-
 function facilityOverallLevel(entries) {
   let max = 0;
   (entries || []).forEach((e) => {
@@ -261,25 +187,6 @@ function facilityOverallLevel(entries) {
   });
   return max;
 }
-
-const MONTHS_ID = [
-  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
-];
-
-function monthLabel(monthKey) {
-  if (!monthKey) return "";
-  const [y, m] = monthKey.split("-").map(Number);
-  return `${MONTHS_ID[m - 1]} ${y}`;
-}
-
-function prevMonthKey(monthKey) {
-  const [y, m] = monthKey.split("-").map(Number);
-  const d = new Date(y, m - 2, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-const LEVEL_LABEL = { 0: "N/A", 1: "Terkendali", 2: "Alert", 3: "Action", 4: "Melebihi Syarat" };
 
 function buildStatsSummary(classes, entries) {
   const summary = {};
@@ -340,24 +247,6 @@ function buildStatsSummary(classes, entries) {
     summary[k] = { totalTitik: kelasEntries.length, maxLevel: LEVEL_LABEL[maxLevel], perParam, breaches };
   });
   return summary;
-}
-
-function shortDate(iso) {
-  if (!iso) return "";
-  const [, m, d] = iso.split("-");
-  return `${d}/${m}`;
-}
-
-function fullDateID(iso) {
-  if (!iso) return "-";
-  const [y, m, d] = iso.split("-");
-  if (!y || !m || !d) return iso;
-  return `${d} ${MONTHS_ID[Number(m) - 1]} ${y}`;
-}
-
-function todayISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function uid() {
@@ -432,7 +321,7 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
       {isOpen && (
         <div
           onClick={onClose}
-          className="no-print fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-xs lg:hidden transition-opacity duration-300"
+          className="no-print fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm lg:hidden transition-opacity duration-300"
         />
       )}
 
@@ -455,7 +344,7 @@ function Sidebar({ session, view, setView, facilityKey, setFacilityKey, status =
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
           {/* Group 1: Menu Utama */}
           <div className="space-y-1">
             <p className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Menu Utama</p>
@@ -626,7 +515,7 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
         </div>
 
         <div className="flex items-center gap-2.5">
-          <label className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 shadow-2xs">
+          <label className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 shadow-sm">
             <Calendar size={13} className="text-blue-700" />
             <input
               type="month"
@@ -641,7 +530,7 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
               <button
                 type="button"
                 onClick={() => setShowNotifPopover(!showNotifPopover)}
-                className="relative p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition shadow-2xs"
+                className="relative p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition shadow-sm"
                 title="Pusat Notifikasi & Alarm Integritas Data"
               >
                 <Bell size={16} />
@@ -659,7 +548,7 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
               {showNotifPopover && (
                 <>
                   <div onClick={() => setShowNotifPopover(false)} className="fixed inset-0 z-40 bg-transparent" />
-                  <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-3xl bg-white shadow-2xl border border-slate-200 z-50 overflow-hidden animate-fade-in">
+                  <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-3xl bg-white shadow-2xl border border-slate-200 z-50 overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-100">
                       <div className="flex items-center gap-2">
                         <Bell size={14} className="text-blue-700" />
@@ -709,7 +598,7 @@ function HeaderBar({ session, onLoginClick, onLogout, onProfileClick, monthKey, 
                               </div>
                               <p className="text-[11px] text-slate-600 leading-snug">{item.desc}</p>
                               <div className="flex items-center gap-1.5 pt-0.5">
-                                <span className="text-[9px] font-semibold text-slate-700 bg-white border border-slate-200 px-1.5 py-0.2 rounded-md">
+                                <span className="text-[9px] font-semibold text-slate-700 bg-white border border-slate-200 px-1.5 py-0.5 rounded-md">
                                   {item.facilityLabel}
                                 </span>
                               </div>
@@ -1225,6 +1114,74 @@ const STATUS_TINT = {
 
 const STATUS_ACCENT = { 0: "#cbd5e1", 1: "#22c55e", 2: "#22c55e", 3: "#f97316", 4: "#ef4444" };
 
+// Menyusun daftar notifikasi dari status seluruh fasilitas pada bulan berjalan.
+// Sebelumnya komponen Sidebar/HeaderBar sudah punya UI notifikasi lengkap, tapi
+// tidak pernah ada yang mengirim datanya — jadi lonceng selalu kosong dan menu
+// "Pusat Notifikasi" nyasar ke halaman fasilitas. Fungsi ini yang mengisinya.
+function buildNotifications(statusIndex, monthKey, session) {
+  if (!session) return [];
+  const periode = monthLabel(monthKey);
+  const isQA = session.role === "Administrator" || session.departemen === "QA";
+  const items = [];
+
+  FACILITIES.forEach((f) => {
+    const st = statusIndex?.[f.key];
+    const base = { facilityKey: f.key, facilityLabel: f.label, time: periode };
+
+    if (!st?.hasData) {
+      items.push({
+        ...base,
+        type: "pending",
+        title: "Belum ada data pengujian",
+        desc: `Belum ada satu pun titik sampling yang tercatat untuk periode ${periode}.`,
+      });
+      return;
+    }
+
+    const level = st.level || 0;
+    if (level >= 4) {
+      items.push({
+        ...base,
+        type: "critical",
+        title: "Hasil melebihi batas Syarat",
+        desc: "Terdapat titik yang melampaui batas Syarat (spesifikasi). Perlu investigasi dan pengujian ulang (re-sampling).",
+      });
+    } else if (level === 3) {
+      items.push({
+        ...base,
+        type: "pending",
+        title: "Hasil mencapai Action Limit",
+        desc: "Masih di bawah batas Syarat, namun perlu dievaluasi pada hasil pengujian periode berikutnya.",
+      });
+    } else if (level === 2) {
+      items.push({
+        ...base,
+        type: "pending",
+        title: "Hasil mencapai Alert Limit",
+        desc: "Masih di bawah batas Syarat, namun perlu dipantau agar tidak menunjukkan tren peningkatan.",
+      });
+    }
+
+    // Pengingat alur kerja khusus QA/Administrator.
+    if (isQA && !st.finalApproved) {
+      items.push({
+        ...base,
+        type: "qa_global",
+        title: st.hasReport ? "Pengkajian EM belum final" : "Pengkajian EM belum disusun",
+        desc: st.hasReport
+          ? `Draf Pengkajian EM periode ${periode} belum di-approve final (Mengetahui) oleh Manager QA.`
+          : st.formulirQCComplete
+            ? `Formulir QC periode ${periode} sudah lengkap — Pengkajian EM sudah bisa disusun.`
+            : `Menunggu Formulir QC (FM.QC.062) periode ${periode} selesai di-acc QC sebelum Pengkajian EM bisa dibuat.`,
+      });
+    }
+  });
+
+  // Kritis dulu, lalu tugas QA, lalu sisanya.
+  const order = { critical: 0, qa_global: 1, pending: 2 };
+  return items.sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9));
+}
+
 function DashboardOverview({ monthKey, setMonthKey, statusIndex, loadingStatus, statusError, onOpen }) {
   const perluCount = FACILITIES.filter((f) => (statusIndex[f.key]?.level || 0) === 3).length;
   const tmsCount = FACILITIES.filter((f) => (statusIndex[f.key]?.level || 0) >= 4).length;
@@ -1272,14 +1229,14 @@ function DashboardOverview({ monthKey, setMonthKey, statusIndex, loadingStatus, 
             const tint = STATUS_TINT[level];
             return (
               <button key={f.key} onClick={() => onOpen(f.key)}
-                className="group flex w-full items-center justify-between overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-xs transition hover:-translate-y-0.5 hover:border-blue-400 hover:shadow-md">
+                className="group flex w-full items-center justify-between overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-400 hover:shadow-md">
                 <div className="flex items-center gap-3.5">
                   <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background: tint.bg, color: tint.fg }}>
                     <Building2 size={20} />
                   </span>
                   <div>
                     <p className="font-bold text-slate-800 text-sm group-hover:text-blue-900 transition-colors">{f.label}</p>
-                    <p className="text-xs text-slate-400">{loadingStatus ? "Memuat..." : st?.hasData ? "Ada data bulan ini" : "Belum ada data bulan ini"}</p>
+                    <p className="text-xs text-slate-400">{loadingStatus ? "Memuat…" : st?.hasData ? "Ada data bulan ini" : "Belum ada data bulan ini"}</p>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -1306,7 +1263,6 @@ function keteranganMS(entry) {
 
 function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token, locked = false, onBack }) {
   const facility = FACILITIES.find((f) => f.key === facilityKey);
-  const tglBerlakuR3 = "";
   const [tanggal, setTanggal] = useState("");
   const [meta, setMeta] = useState(null);
   const [noKontrolMedia, setNoKontrolMedia] = useState("");
@@ -1384,6 +1340,9 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
   }
 
   const formNo = meta?.formNo || "FM.QC.062/R3";
+  // Tanggal berlaku formulir aktif — sekarang datang dari Code.gs
+  // (konstanta REPORT_EM_TGL_BERLAKU), bukan lagi string kosong hardcode.
+  const tglBerlaku = meta?.tglBerlaku || "";
   const prevFormNo = meta?.prevFormNo || "FM.QC.062/R2";
   const prevTglBerlaku = meta?.prevTglBerlaku || "";
   const analis = meta?.analis || { nama: "", tanggal: "" };
@@ -1451,7 +1410,7 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
               </div>
               <div className="text-right text-xs text-blue-200">
                 <p>No. : <span className="font-semibold text-white">{formNo}</span></p>
-                <p>Tgl Berlaku : <span className="text-white">{tglBerlakuR3 || "-"}</span></p>
+                <p>Tgl Berlaku : <span className="text-white">{tglBerlaku || "-"}</span></p>
                 <p>Menggantikan No. : <span className="text-white">{prevFormNo}</span></p>
                 <p>Tgl Berlaku : <span className="text-white">{prevTglBerlaku}</span></p>
               </div>
@@ -1646,7 +1605,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
           setSignoff(emptySignoff());
         }
       } catch (err) {
-        if (!cancelled) setLoadError("Gagal memuat data dari spreadsheet: " + err.message);
+        if (!cancelled) setLoadError("Gagal memuat data: " + err.message);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -1788,7 +1747,7 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
   }
 
   if (loading) {
-    return <div className="flex h-64 items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={18} /> Memuat data dari spreadsheet...</div>;
+    return <div className="flex h-64 items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={18} /> Memuat data…</div>;
   }
   if (loadError) {
     return (
@@ -1963,6 +1922,26 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
             <h3 className="mb-3 text-sm font-bold text-slate-700">Kesimpulan Umum</h3>
             <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
               rows={8} value={narrative.kesimpulanUmum} onChange={(ev) => setNarrative({ ...narrative, kesimpulanUmum: ev.target.value })} readOnly={!canEditQA || isLocked} />
+          </div>
+
+          {/* Dua kolom di bawah ini sebenarnya sudah lama tersimpan di tab
+              Laporan_Narasi, tapi dulu tidak pernah punya tempat di layar
+              sehingga selalu kosong. Sekarang bisa diisi & ikut tercetak. */}
+          <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-white p-5 print-card">
+              <h3 className="mb-1 text-sm font-bold text-slate-700">Tindak Lanjut</h3>
+              <p className="mb-2 text-[11px] text-slate-400">Opsional — tindakan yang akan/sudah dilakukan atas temuan periode ini.</p>
+              <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+                rows={5} value={narrative.tindakLanjut} placeholder="mis. peninjauan jadwal sanitasi pada area terkait…"
+                onChange={(ev) => setNarrative({ ...narrative, tindakLanjut: ev.target.value })} readOnly={!canEditQA || isLocked} />
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-5 print-card">
+              <h3 className="mb-1 text-sm font-bold text-slate-700">Rekomendasi Akhir</h3>
+              <p className="mb-2 text-[11px] text-slate-400">Opsional — saran perbaikan atau pemantauan untuk periode berikutnya.</p>
+              <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+                rows={5} value={narrative.rekomendasiAkhir} placeholder="mis. evaluasi ulang hasil pada periode berikutnya…"
+                onChange={(ev) => setNarrative({ ...narrative, rekomendasiAkhir: ev.target.value })} readOnly={!canEditQA || isLocked} />
+            </div>
           </div>
 
           <div className="mb-8 rounded-xl border border-slate-200 bg-white p-5 print-card">
@@ -2161,10 +2140,43 @@ function ProfileModal({ session, onClose }) {
 /* =========================================================================
    10. HALAMAN RIWAYAT AKTIVITAS
    ========================================================================= */
-function ActivityLogPage({ token, onBack }) {
+// Mengubah daftar log jadi CSV. Pakai penanda "sep=," di baris pertama supaya
+// Excel membuka file ini dengan kolom yang benar apa pun regional setting-nya,
+// dan BOM UTF-8 supaya huruf beraksen tidak berantakan.
+function logsToCSV(logs) {
+  const header = ["Waktu", "Username", "Nama", "Role", "Departemen", "Aksi", "Fasilitas", "Bulan", "Detail"];
+  const esc = (v) => {
+    const str = v === null || v === undefined ? "" : String(v);
+    return /[",\r\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  };
+  const rows = logs.map((l) => [
+    l.waktu ? new Date(l.waktu).toLocaleString("id-ID") : "",
+    l.username, l.nama, l.role, l.departemen, l.aksi, l.fasilitas, l.bulan, l.detail,
+  ]);
+  return "\uFEFFsep=,\r\n" + [header, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
+}
+
+function downloadCSV(filename, csvText) {
+  const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function ActivityLogPage({ session, token, onBack }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [keyword, setKeyword] = useState("");
+
+  // Unduh audit trail dibuka untuk Administrator dan seluruh personil QA
+  // (halaman ini sendiri sudah dibatasi minimal level Supervisor).
+  const canDownload = session?.role === "Administrator" || session?.departemen === "QA";
 
   useEffect(() => {
     let cancelled = false;
@@ -2175,53 +2187,170 @@ function ActivityLogPage({ token, onBack }) {
     return () => { cancelled = true; };
   }, [token]);
 
+  const filteredLogs = useMemo(() => {
+    const q = keyword.trim().toLowerCase();
+    if (!q) return logs;
+    return logs.filter((l) =>
+      [l.nama, l.username, l.role, l.departemen, l.aksi, l.fasilitas, l.bulan, l.detail]
+        .map((v) => String(v || "").toLowerCase())
+        .some((v) => v.includes(q))
+    );
+  }, [logs, keyword]);
+
+  const handleDownload = () => {
+    const stamp = todayISO();
+    downloadCSV(`Audit_Trail_EM_Viable_${stamp}.csv`, logsToCSV(filteredLogs));
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <button onClick={onBack} className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1.5 transition">
+        <button onClick={onBack} className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-slate-800">
           <ChevronLeft size={16} /> Kembali ke Dashboard
         </button>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs">
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm">
         <div>
           <h2 className="text-base font-bold text-slate-800">Riwayat Aktivitas &amp; Audit Trail</h2>
           <p className="text-xs text-slate-400">Rekam jejak seluruh aksi login, input, dan approval EM Viable</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="search"
+            value={keyword}
+            onChange={(ev) => setKeyword(ev.target.value)}
+            placeholder="Cari nama, aksi, fasilitas…"
+            className="w-52 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 outline-none focus:border-blue-400"
+          />
+          {canDownload && (
+            <button
+              onClick={handleDownload}
+              disabled={loading || filteredLogs.length === 0}
+              title="Unduh audit trail sebagai file CSV (bisa dibuka di Excel)"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-800 disabled:opacity-50"
+            >
+              <Download size={14} /> Unduh CSV
+            </button>
+          )}
+        </div>
       </div>
+
       {loading ? (
-        <div className="flex h-40 items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={16} /> Memuat...</div>
+        <div className="flex h-40 items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={16} /> Memuat…</div>
       ) : error ? (
-        <p className="rounded-xl bg-red-50 p-3.5 text-xs text-red-600 border border-red-200">{error}</p>
-      ) : logs.length === 0 ? (
-        <div className="p-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 text-slate-400 text-xs">
-          Belum ada riwayat aktivitas tercatat.
+        <p className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-600">{error}</p>
+      ) : filteredLogs.length === 0 ? (
+        <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-12 text-center text-xs text-slate-400">
+          {logs.length === 0 ? "Belum ada riwayat aktivitas tercatat." : "Tidak ada riwayat yang cocok dengan pencarian."}
         </div>
       ) : (
-        <div className="bg-white rounded-3xl border border-slate-200/80 divide-y text-xs shadow-xs overflow-hidden">
-          {logs.map((l, i) => (
-            <div key={i} className="p-4 flex flex-wrap items-center justify-between gap-2 hover:bg-slate-50/70 transition">
-              <div className="space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-bold text-slate-800">{l.nama}</span>
-                  <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
-                    {l.role} {l.departemen}
-                  </span>
-                  <span className="font-semibold text-blue-900 bg-blue-50 px-2.5 py-0.5 rounded-full text-[11px] border border-blue-200/60">
-                    {l.aksi}
-                  </span>
-                  {l.fasilitas && (
-                    <span className="text-[11px] font-bold text-slate-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-                      {l.fasilitas}
+        <>
+          <p className="px-1 text-[11px] text-slate-400">
+            Menampilkan {filteredLogs.length} dari {logs.length} catatan
+            {canDownload ? " — tombol Unduh CSV mengikuti hasil pencarian di atas." : ""}
+          </p>
+          <div className="divide-y overflow-hidden rounded-3xl border border-slate-200/80 bg-white text-xs shadow-sm">
+            {filteredLogs.map((l, i) => (
+              <div key={i} className="flex flex-wrap items-center justify-between gap-2 p-4 transition hover:bg-slate-50/70">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-slate-800">{l.nama}</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                      {l.role} {l.departemen}
                     </span>
-                  )}
+                    <span className="rounded-full border border-blue-200/60 bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-900">
+                      {l.aksi}
+                    </span>
+                    {l.fasilitas && (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-slate-700">
+                        {l.fasilitas}
+                      </span>
+                    )}
+                  </div>
+                  {l.detail && <p className="text-[11px] text-slate-500">{l.detail}</p>}
                 </div>
-                {l.detail && <p className="text-slate-500 text-[11px]">{l.detail}</p>}
+                <span className="whitespace-nowrap text-[10px] text-slate-400">
+                  {new Date(l.waktu).toLocaleString("id-ID")}
+                </span>
               </div>
-              <span className="text-slate-400 text-[10px] whitespace-nowrap">
-                {new Date(l.waktu).toLocaleString("id-ID")}
-              </span>
-            </div>
-          ))}
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* =========================================================================
+   11. HALAMAN PUSAT NOTIFIKASI
+   ========================================================================= */
+const NOTIF_STYLE = {
+  critical: { icon: AlertOctagon, color: "text-red-600", tint: "bg-red-50/60", border: "border-red-200" },
+  qa_global: { icon: FileText, color: "text-blue-600", tint: "bg-blue-50/60", border: "border-blue-200" },
+  pending: { icon: Clock, color: "text-amber-600", tint: "bg-amber-50/50", border: "border-amber-200" },
+};
+
+function NotificationsPage({ notifications, monthKey, onOpenFacility, onBack }) {
+  const criticalCount = notifications.filter((n) => n.type === "critical").length;
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 transition hover:text-slate-800">
+        <ChevronLeft size={16} /> Kembali ke Dashboard
+      </button>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm">
+        <div>
+          <h2 className="text-base font-bold text-slate-800">Pusat Notifikasi &amp; Alert</h2>
+          <p className="text-xs text-slate-400">
+            Ringkasan status dan tugas yang perlu ditindaklanjuti — periode {monthLabel(monthKey)}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {criticalCount > 0 && (
+            <span className="rounded-full bg-red-100 px-2.5 py-1 text-[11px] font-bold text-red-700">
+              {criticalCount} kritis
+            </span>
+          )}
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+            {notifications.length} item
+          </span>
+        </div>
+      </div>
+
+      {notifications.length === 0 ? (
+        <div className="space-y-1.5 rounded-3xl border border-dashed border-slate-200 bg-white p-12 text-center">
+          <CheckCircle2 size={26} className="mx-auto text-emerald-500" />
+          <p className="text-sm font-semibold text-slate-700">Semua parameter terkendali</p>
+          <p className="text-xs text-slate-400">Tidak ada deviasi batas limit ataupun tugas evaluasi yang tertunda.</p>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {notifications.map((item, idx) => {
+            const style = NOTIF_STYLE[item.type] || NOTIF_STYLE.pending;
+            const Icon = style.icon;
+            return (
+              <button
+                key={idx}
+                onClick={() => onOpenFacility(item.facilityKey)}
+                className={`flex w-full items-start gap-3 rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${style.border} ${style.tint}`}
+              >
+                <Icon size={18} className={`mt-0.5 shrink-0 ${style.color}`} />
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-bold text-slate-800">{item.title}</p>
+                    <span className="text-[10px] text-slate-400">{item.time}</span>
+                  </div>
+                  <p className="text-xs leading-relaxed text-slate-600">{item.desc}</p>
+                  <span className="inline-block rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                    {item.facilityLabel}
+                  </span>
+                </div>
+                <ChevronRight size={16} className="mt-1 shrink-0 text-slate-300" />
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -2229,7 +2358,7 @@ function ActivityLogPage({ token, onBack }) {
 }
 
 /* =========================================================================
-   11. HALAMAN VERIFIKASI QR DOKUMEN PUBLIK
+   12. HALAMAN VERIFIKASI QR DOKUMEN PUBLIK
    ========================================================================= */
 function VerifyPage() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -2334,12 +2463,20 @@ function VerifyPage() {
 }
 
 /* =========================================================================
-   12. APP ROOT
+   13. APP ROOT
    ========================================================================= */
-export default function App() {
-  if (typeof window !== "undefined" && window.location.pathname === "/verify") {
-    return <VerifyPage />;
-  }
+// Router paling sederhana: /verify adalah halaman publik yang berdiri sendiri.
+// Pengecekan ini SENGAJA dipisah ke komponen terpisah — kalau ditaruh sebagai
+// "early return" di dalam <App/>, semua useState/useEffect di bawahnya jadi
+// hook bersyarat (melanggar Rules of Hooks) dan bisa error saat React
+// melakukan re-render.
+export default function Root() {
+  const isVerifyPage =
+    typeof window !== "undefined" && window.location.pathname === "/verify";
+  return isVerifyPage ? <VerifyPage /> : <App />;
+}
+
+function App() {
   const { session, checking, login: doLogin, logout: doLogout } = useAuth();
   const canPrint = !!session && session.role !== "Tamu";
   const [showLogin, setShowLogin] = useState(false);
@@ -2362,24 +2499,35 @@ export default function App() {
       const idx = await fetchStatusIndex(month);
       setStatusIndex(idx);
     } catch (err) {
-      setStatusError("Gagal memuat status dari spreadsheet: " + err.message);
+      setStatusError("Gagal memuat status fasilitas: " + err.message);
     } finally {
       setLoadingStatus(false);
     }
   }, []);
 
   useEffect(() => {
-    if (view === "dashboard") refreshStatus(monthKey);
+    if (view === "dashboard" || view === "notifications") refreshStatus(monthKey);
   }, [view, monthKey, refreshStatus]);
+
+  const notifications = useMemo(
+    () => buildNotifications(statusIndex, monthKey, session),
+    [statusIndex, monthKey, session]
+  );
+
+  const openFacility = useCallback((key) => {
+    setFacilityKey(key);
+    setView("detail");
+  }, []);
 
   useEffect(() => {
     if (view === "activity" && !(session && hasAccess(session, "Supervisor"))) {
       setView("dashboard");
     }
+    if (view === "notifications" && !session) setView("dashboard");
   }, [session, view]);
 
   if (checking) {
-    return <div className="flex h-screen items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={18} /> Memuat sesi...</div>;
+    return <div className="flex h-screen items-center justify-center text-slate-400"><Loader2 className="mr-2 animate-spin" size={18} /> Memuat sesi…</div>;
   }
 
   return (
@@ -2436,6 +2584,7 @@ export default function App() {
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           hasAccess={hasAccess}
+          notifications={notifications}
         />
 
         {/* KONTEN UTAMA DENGAN OFFSET DESKTOP lg:pl-72 & AUTO-RESET PADDING SAAT PRINT */}
@@ -2448,6 +2597,8 @@ export default function App() {
             monthKey={monthKey}
             setMonthKey={setMonthKey}
             onToggleSidebar={() => setSidebarOpen(true)}
+            notifications={notifications}
+            onSelectNotification={(item) => openFacility(item.facilityKey)}
           />
 
           <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
@@ -2458,10 +2609,17 @@ export default function App() {
                 statusIndex={statusIndex}
                 loadingStatus={loadingStatus}
                 statusError={statusError}
-                onOpen={(key) => { setFacilityKey(key); setView("detail"); }}
+                onOpen={openFacility}
+              />
+            ) : view === "notifications" ? (
+              <NotificationsPage
+                notifications={notifications}
+                monthKey={monthKey}
+                onOpenFacility={openFacility}
+                onBack={() => setView("dashboard")}
               />
             ) : view === "activity" ? (
-              <ActivityLogPage token={session?.token} onBack={() => setView("dashboard")} />
+              <ActivityLogPage session={session} token={session?.token} onBack={() => setView("dashboard")} />
             ) : (
               <FacilityDetail
                 facilityKey={facilityKey}

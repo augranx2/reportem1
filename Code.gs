@@ -97,6 +97,10 @@ const REPORT_EM_SHEET = "Report_EM";
 // Nomor formulir "Report Hasil EM" fisik (FM.QC.062) yang didigitalkan.
 // Ubah di sini kalau nanti ada revisi berikutnya (R4, dst).
 const REPORT_EM_FORM_NO = "FM.QC.062/R3";
+// Tanggal berlaku formulir yang AKTIF sekarang (R3). Isi sesuai dokumen resmi,
+// mis. "1 Maret 2024". Dulu nilai ini di-hardcode string kosong di App.jsx
+// sehingga kolom "Tgl Berlaku" pada cetakan selalu tampil "-".
+const REPORT_EM_TGL_BERLAKU = "";
 const REPORT_EM_PREV_FORM_NO = "FM.QC.062/R2";
 const REPORT_EM_PREV_TGL_BERLAKU = "27 September 2022";
 const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 jam
@@ -232,12 +236,16 @@ function withAuth_(token, fn) {
 // AUTH: LOGIN / LOGOUT / SESSION
 // ---------------------------------------------------------------------------
 
+// Menghasilkan string hex acak. Sengaja TIDAK memakai Math.random() — generator
+// itu tidak dirancang untuk keperluan keamanan dan hasilnya bisa ditebak, padahal
+// fungsi ini dipakai untuk salt password dan token sesi. Utilities.getUuid()
+// menghasilkan UUID v4 dari sumber acak sistem, jadi dipakai sebagai sumber entropi.
 function randomHex_(numBytes) {
-  const chars = [];
-  for (let i = 0; i < numBytes; i++) {
-    chars.push(("0" + Math.floor(Math.random() * 256).toString(16)).slice(-2));
+  let hex = "";
+  while (hex.length < numBytes * 2) {
+    hex += Utilities.getUuid().replace(/-/g, "");
   }
-  return chars.join("");
+  return hex.slice(0, numBytes * 2);
 }
 
 function generateSalt_() {
@@ -456,7 +464,9 @@ function getActivityLog_(token, month, facilityLabel) {
   if (month) logs = logs.filter(function (l) { return l.bulan === month; });
   if (facilityLabel) logs = logs.filter(function (l) { return l.fasilitas === facilityLabel; });
   logs.sort(function (a, b) { return new Date(b.waktu) - new Date(a.waktu); });
-  return { logs: logs.slice(0, 300) };
+  // Dinaikkan dari 300 supaya fitur "Unduh CSV" di website memuat riwayat yang
+  // cukup panjang untuk keperluan audit/inspeksi.
+  return { logs: logs.slice(0, 2000) };
 }
 
 // ---------------------------------------------------------------------------
@@ -611,7 +621,13 @@ function getReportEM_(facilityKey, tanggal) {
   if (!tanggal) return { found: false };
   const found = findReportEMRow_(cfg.label, tanggal);
   if (found.rowIndex === -1) {
-    return { found: false, formNo: REPORT_EM_FORM_NO, prevFormNo: REPORT_EM_PREV_FORM_NO, prevTglBerlaku: REPORT_EM_PREV_TGL_BERLAKU };
+    return {
+      found: false,
+      formNo: REPORT_EM_FORM_NO,
+      tglBerlaku: REPORT_EM_TGL_BERLAKU,
+      prevFormNo: REPORT_EM_PREV_FORM_NO,
+      prevTglBerlaku: REPORT_EM_PREV_TGL_BERLAKU,
+    };
   }
   const row = found.row;
   return {
@@ -619,6 +635,7 @@ function getReportEM_(facilityKey, tanggal) {
     noKontrolMedia: row[2] || "",
     tanggalPembacaan: formatDate_(row[3]),
     formNo: row[4] || REPORT_EM_FORM_NO,
+    tglBerlaku: REPORT_EM_TGL_BERLAKU,
     prevFormNo: REPORT_EM_PREV_FORM_NO,
     prevTglBerlaku: REPORT_EM_PREV_TGL_BERLAKU,
     analis: { nama: row[5] || "", username: row[6] || "", tanggal: formatDate_(row[7]) },
@@ -761,12 +778,23 @@ function getEntries_(facilityKey, month) {
   return { facility: facilityKey, month: month, entries: entries };
 }
 
+// PENTING: fungsi ini menghapus lalu menulis ulang SELURUH baris bulan terkait.
+// Kalau dua orang menyimpan hampir bersamaan, yang satu bisa membaca data lama
+// dan menimpa pekerjaan yang lain. Karena itu seluruh baca-tulis dibungkus
+// LockService supaya hanya satu proses yang boleh berjalan pada satu waktu.
 function saveEntries_(facilityKey, month, entries) {
   const cfg = FACILITIES[facilityKey];
   if (!cfg) return { error: "Fasilitas tidak dikenal: " + facilityKey };
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(cfg.dataSheet);
   if (!sheet) return { error: "Tab data tidak ditemukan: " + cfg.dataSheet };
 
+  const lock = LockService.getDocumentLock();
+  try {
+    lock.waitLock(20000);
+  } catch (err) {
+    return { error: "Sedang ada penyimpanan lain yang berjalan. Tunggu sebentar lalu coba simpan lagi." };
+  }
+  try {
   const values = sheet.getDataRange().getValues();
   const kept = [];
   for (let i = 1; i < values.length; i++) {
@@ -788,7 +816,11 @@ function saveEntries_(facilityKey, month, entries) {
   if (finalRows.length > 0) {
     sheet.getRange(2, 1, finalRows.length, 7).setValues(finalRows);
   }
+  SpreadsheetApp.flush();
   return { ok: true, saved: newRows.length };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -911,6 +943,13 @@ function saveReport_(facilityKey, month, narrative, signoff) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(NARRATIVE_SHEET);
   if (!sheet) return { error: "Tab tidak ditemukan: " + NARRATIVE_SHEET };
 
+  const lock = LockService.getDocumentLock();
+  try {
+    lock.waitLock(20000);
+  } catch (err) {
+    return { error: "Sedang ada penyimpanan lain yang berjalan. Tunggu sebentar lalu coba simpan lagi." };
+  }
+  try {
   const values = sheet.getDataRange().getValues();
   let targetRow = -1;
   for (let i = 1; i < values.length; i++) {
@@ -948,7 +987,11 @@ function saveReport_(facilityKey, month, narrative, signoff) {
   } else {
     sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
   }
+  SpreadsheetApp.flush();
   return { ok: true };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -961,12 +1004,28 @@ function getLimit_(parameter, kelas) {
   return null;
 }
 
+// Menerima angka biasa ("12") MAUPUN notasi kurang-dari ("<1", "< 1").
+// Dulu levelFor_ langsung memakai Number(), sehingga nilai "<1" jadi NaN dan
+// dianggap "belum diuji" — akibatnya status di Dashboard bisa berbeda dengan
+// status di halaman detail fasilitas. Logika ini disamakan dengan
+// parseNumericValue() di src/limits.js.
+function parseNumericValue_(rawValue) {
+  if (rawValue === null || rawValue === undefined || rawValue === "") return null;
+  const str = String(rawValue).trim();
+  const m = str.match(/^<\s*([\d.]+)$/);
+  if (m) {
+    const n = Number(m[1]);
+    return isNaN(n) ? null : n - 0.001;
+  }
+  const n = Number(str);
+  return isNaN(n) ? null : n;
+}
+
 function levelFor_(rawValue, parameter, kelas) {
   const limit = getLimit_(parameter, kelas);
   if (!limit) return 0;
-  if (rawValue === null || rawValue === undefined || rawValue === "") return 0;
-  const v = Number(rawValue);
-  if (isNaN(v)) return 0;
+  const v = parseNumericValue_(rawValue);
+  if (v === null) return 0;
   if (limit.lessThan) return v < 1 ? 1 : 4;
   if (v < limit.alert) return 1;
   if (v < limit.action) return 2;
@@ -986,7 +1045,16 @@ function getStatusIndex_(month) {
         if (lvl > maxLevel) maxLevel = lvl;
       });
     });
-    out[key] = { level: maxLevel, hasData: entries.length > 0 };
+    // Info tambahan untuk Pusat Notifikasi di website: sampai mana progres
+    // dokumen bulan ini (Formulir QC selesai? Pengkajian sudah ada/final?).
+    const rep = getReport_(key, month);
+    out[key] = {
+      level: maxLevel,
+      hasData: entries.length > 0,
+      hasReport: !!rep.found,
+      finalApproved: !!(rep.found && rep.signoff && rep.signoff.diperiksa && rep.signoff.diperiksa.nama),
+      formulirQCComplete: entries.length > 0 && isFormulirQCCompleteForMonth_(key, month),
+    };
   });
   return { month: month, status: out };
 }
