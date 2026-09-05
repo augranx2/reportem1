@@ -14,6 +14,27 @@
 
 ---
 
+## 0. Data pengujian sekarang wajib login
+
+Sebelumnya seluruh data bisa dibaca **tanpa akun sama sekali** — bukan hanya di
+tampilan web ("mode publik"), tapi juga dengan membuka URL `/exec` Apps Script
+langsung dengan parameter yang benar. Sekarang:
+
+- **Di server (`Code.gs`)**: setiap aksi baca wajib membawa token sesi yang masih
+  berlaku. Tanpa token, server menjawab
+  *"Silakan masuk terlebih dahulu untuk melihat data pengujian."* Ini pengamanan
+  yang sesungguhnya — memblokir di sisi tampilan saja tidak cukup karena API-nya
+  masih bisa dipanggil langsung.
+- **Pengecualian yang tetap publik**: `whoami` (memvalidasi token tersimpan) dan
+  `verify` — halaman hasil scan QR tetap bisa dibuka siapa saja, dan seperti
+  sebelumnya hanya menampilkan info tanda tangan, bukan isi narasi/formulir.
+- **Di website**: pengunjung tanpa login melihat layar **"Masuk untuk melihat
+  data"** dengan tombol Masuk, menggantikan seluruh isi halaman. Banner "mode
+  publik" yang lama sudah tidak berlaku lagi.
+
+> ⚠️ Perubahan ini hanya aktif setelah `Code.gs` ditempel ulang dan
+> **di-deploy versi baru** di Apps Script.
+
 ## 1. Teks pemuatan data
 
 Kata "spreadsheet" dihapus dari seluruh teks yang dilihat pengguna — itu detail

@@ -1617,8 +1617,8 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
       setLoadError("");
       try {
         const [rooms, ent, rep] = await Promise.all([
-          fetchMaster(facilityKey),
-          fetchEntries(facilityKey, monthKey),
+          fetchMaster(facilityKey, token),
+          fetchEntries(facilityKey, monthKey, token),
           fetchReport(facilityKey, monthKey, token),
         ]);
         if (cancelled) return;
@@ -2318,6 +2318,36 @@ const NOTIF_STYLE = {
   pending: { icon: Clock, color: "text-amber-600", tint: "bg-amber-50/50", border: "border-amber-200" },
 };
 
+// Layar pengganti seluruh isi halaman ketika belum ada sesi login. Sebelumnya
+// pengunjung tanpa akun tetap bisa melihat tabel hasil pengujian dalam "mode
+// publik"; sekarang data pengujian hanya bisa diakses setelah login.
+function LoginRequired({ onLogin }) {
+  return (
+    <div className="mx-auto max-w-lg space-y-4 rounded-3xl border border-slate-200/80 bg-white p-10 text-center shadow-sm">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+        <Lock size={22} />
+      </div>
+      <div className="space-y-1.5">
+        <h2 className="text-lg font-bold text-slate-800">Masuk untuk melihat data</h2>
+        <p className="text-sm leading-relaxed text-slate-500">
+          Data hasil pengujian Environment Monitoring (EM) Viable bersifat internal dan hanya
+          dapat diakses oleh personil PT. Rama Emerald Multi Sukses yang sudah memiliki akun.
+        </p>
+      </div>
+      <button
+        onClick={onLogin}
+        className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-800"
+      >
+        <LogIn size={16} /> Masuk
+      </button>
+      <p className="text-[11px] leading-relaxed text-slate-400">
+        Belum punya akun? Hubungi QA Mikrobiologi atau Administrator sistem.
+        Verifikasi keaslian dokumen lewat QR code tetap bisa dilakukan tanpa login.
+      </p>
+    </div>
+  );
+}
+
 function NotificationsPage({ notifications, months = [], runningMonth, onOpenFacility, onBack }) {
   const criticalCount = notifications.filter((n) => n.type === "critical").length;
 
@@ -2538,17 +2568,18 @@ function App() {
   const [statusError, setStatusError] = useState("");
 
   const refreshStatus = useCallback(async (month) => {
+    if (!session) { setStatusIndex({}); return; }
     setLoadingStatus(true);
     setStatusError("");
     try {
-      const idx = await fetchStatusIndex(month);
+      const idx = await fetchStatusIndex(month, session?.token);
       setStatusIndex(idx);
     } catch (err) {
       setStatusError("Gagal memuat status fasilitas: " + err.message);
     } finally {
       setLoadingStatus(false);
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     if (view === "dashboard") refreshStatus(monthKey);
@@ -2568,14 +2599,14 @@ function App() {
   const refreshNotifStatus = useCallback(async () => {
     try {
       const results = await Promise.all(
-        notifMonths.map((m) => fetchStatusIndex(m).then((idx) => [m, idx]))
+        notifMonths.map((m) => fetchStatusIndex(m, session?.token).then((idx) => [m, idx]))
       );
       setNotifStatusByMonth(Object.fromEntries(results));
     } catch {
       // Notifikasi bersifat pelengkap — kalau gagal dimuat, jangan sampai
       // mengganggu halaman utama. Error status utama tetap ditampilkan sendiri.
     }
-  }, [notifMonths]);
+  }, [notifMonths, session]);
 
   useEffect(() => {
     if (session) refreshNotifStatus();
@@ -2676,7 +2707,9 @@ function App() {
           />
 
           <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-            {view === "dashboard" ? (
+            {!session ? (
+              <LoginRequired onLogin={() => setShowLogin(true)} />
+            ) : view === "dashboard" ? (
               <DashboardOverview
                 monthKey={monthKey}
                 setMonthKey={setMonthKey}

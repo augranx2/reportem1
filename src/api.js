@@ -30,12 +30,14 @@ async function apiPost(body) {
   return data;
 }
 
-export function fetchMaster(facility) {
-  return apiGet({ action: "master", facility }).then((d) => d.rooms || []);
+// Seluruh aksi baca di bawah ini wajib membawa token sesi — server menolak
+// permintaan tanpa token supaya data hasil pengujian tidak bisa dibaca publik.
+export function fetchMaster(facility, token) {
+  return apiGet({ action: "master", facility, token }).then((d) => d.rooms || []);
 }
 
-export function fetchEntries(facility, month) {
-  return apiGet({ action: "entries", facility, month }).then((d) => d.entries || []);
+export function fetchEntries(facility, month, token) {
+  return apiGet({ action: "entries", facility, month, token }).then((d) => d.entries || []);
 }
 
 export function saveEntries(facility, month, entries, token) {
@@ -60,8 +62,8 @@ export function approveMengetahui(facility, month, token) {
   return apiPost({ action: "approveMengetahui", facility, month, token });
 }
 
-export function fetchStatusIndex(month) {
-  return apiGet({ action: "statusIndex", month }).then((d) => d.status || {});
+export function fetchStatusIndex(month, token) {
+  return apiGet({ action: "statusIndex", month, token }).then((d) => d.status || {});
 }
 
 export function fetchActivityLog(token, { month, facility } = {}) {

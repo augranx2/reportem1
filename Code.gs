@@ -117,9 +117,32 @@ const ROLE_LEVEL = { Tamu: 1, Staff: 2, Supervisor: 3, Manager: 4, "Assistant Ma
 // ENTRY POINTS
 // ---------------------------------------------------------------------------
 
+// Aksi baca yang boleh diakses TANPA login. Sisanya wajib membawa token sesi
+// yang masih berlaku. Sebelumnya "master", "entries", dan "statusIndex" bisa
+// dipanggil siapa saja — cukup membuka URL /exec dengan parameter yang benar —
+// sehingga seluruh data hasil pengujian bisa dibaca publik tanpa akun.
+const PUBLIC_GET_ACTIONS = [
+  "login",   // tidak dipakai di doGet, ditulis agar niatnya jelas
+  "whoami",  // dipakai untuk memvalidasi token yang tersimpan di browser
+  "verify",  // halaman /verify hasil scan QR — hanya info tanda tangan
+];
+
+function requireSessionForGet_(e) {
+  const action = e.parameter.action;
+  if (PUBLIC_GET_ACTIONS.indexOf(action) !== -1) return null;
+  const session = e.parameter.token ? validateSession_(e.parameter.token) : null;
+  if (!session) {
+    return { error: "Silakan masuk terlebih dahulu untuk melihat data pengujian.", needLogin: true };
+  }
+  return null;
+}
+
 function doGet(e) {
   try {
     const action = e.parameter.action;
+    const denied = requireSessionForGet_(e);
+    if (denied) return jsonOut_(denied);
+
     let result;
     switch (action) {
       case "master":
