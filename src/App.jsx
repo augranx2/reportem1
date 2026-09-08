@@ -77,6 +77,11 @@ import {
   monthLabel,
   prevMonthKey,
   todayISO,
+  ENTRY_TYPE,
+  isResampling,
+  paramStatus,
+  entryEffectiveLevel,
+  deviationSummary,
 } from "./limits.js";
 
 /* =========================================================================
@@ -177,13 +182,14 @@ function VerifyQR({ type, facility, period, slot, size = 84 }) {
 /* =========================================================================
    4. HELPERS
    ========================================================================= */
+// Level keseluruhan fasilitas. Penyimpangan yang sudah ditutup oleh uji ulang
+// TIDAK lagi menaikkan level — nilainya tetap tercatat, tapi status fasilitas
+// mencerminkan kondisi setelah tindak lanjut.
 function facilityOverallLevel(entries) {
   let max = 0;
   (entries || []).forEach((e) => {
-    PARAM_DEFS.forEach((p) => {
-      const s = getStatus(e[p.key], p.key, e.kelas);
-      if (s.level > max) max = s.level;
-    });
+    const lvl = entryEffectiveLevel(entries, e);
+    if (lvl > max) max = lvl;
   });
   return max;
 }
@@ -228,18 +234,27 @@ function buildStatsSummary(classes, entries) {
     });
 
     kelasEntries.forEach((e) => {
+      if (isResampling(e)) return; // baris uji ulang bukan temuan tersendiri
       PARAM_DEFS.forEach((p) => {
         const limit = getLimit(p.key, k);
         if (!limit) return;
-        const s = getStatus(e[p.key], p.key, k);
-        if (s.level > maxLevel) maxLevel = s.level;
-        if (s.level >= 2) {
+        const st = paramStatus(entries, e, p.key);
+        if (st.level > maxLevel) maxLevel = st.level;
+        if (st.originalLevel >= 2) {
           breaches.push({
             room: e.roomName,
             tanggal: e.tanggal,
             parameter: p.short,
             value: displayValue(e[p.key], k, p.key),
-            level: LEVEL_LABEL[s.level],
+            level: LEVEL_LABEL[st.originalLevel],
+            // Status tindak lanjut ikut dikirim ke AI supaya narasinya menulis
+            // bahwa uji ulang sudah dilakukan, bukan menyuruh melakukannya.
+            tindakLanjut: st.resolved
+              ? `Sudah diuji ulang pada ${fullDateID(st.resample.tanggal)} dengan hasil ${displayValue(st.resample[p.key], k, p.key)} — memenuhi syarat.`
+              : st.openResample
+                ? `Sudah diuji ulang pada ${fullDateID(st.openResample.tanggal)} namun hasilnya masih menyimpang.`
+                : "Belum ada hasil uji ulang yang dicatat.",
+            statusTindakLanjut: st.resolved ? "selesai" : st.openResample ? "masih menyimpang" : "belum ditindaklanjuti",
           });
         }
       });
@@ -943,14 +958,57 @@ function ClassSection({ kelas, entries, narrativeText, onNarrativeChange, readOn
   );
 }
 
-function EntryRow({ entry, masterRooms, onChange, onDelete, readOnly = false, canDelete = true }) {
+// Label pendek untuk baris uji ulang / baris yang sudah ditindaklanjuti.
+function ResampleBadge({ entries, entry }) {
+  if (isResampling(entry)) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+        Uji ulang{entry.refTanggal ? ` dari ${fullDateID(entry.refTanggal)}` : ""}
+      </span>
+    );
+  }
+  const resolved = PARAM_DEFS.map((p) => paramStatus(entries, entry, p.key)).filter((st) => st.resolved);
+  if (resolved.length === 0) return null;
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+      <CheckCircle2 size={11} /> Sudah diuji ulang — memenuhi syarat
+    </span>
+  );
+}
+
+function EntryRow({ entry, entries = [], masterRooms, onChange, onDelete, readOnly = false, canDelete = true }) {
   const isCustom = entry._custom || !masterRooms.some((r) => r.code === entry._sourceCode);
+  const resampling = isResampling(entry);
+
+  // Kandidat sampling asli yang boleh diulang: baris rutin di bulan yang sama
+  // yang minimal sudah menyentuh Alert Limit.
+  const deviationOptions = useMemo(
+    () =>
+      (entries || [])
+        .filter(
+          (e) =>
+            !isResampling(e) &&
+            e.tanggal &&
+            e.roomName &&
+            PARAM_DEFS.some((p) => getStatus(e[p.key], p.key, e.kelas).level >= 2)
+        )
+        .sort((a, b) => String(a.tanggal).localeCompare(String(b.tanggal))),
+    [entries]
+  );
+
+  const refKey = (e) => `${e.tanggal}|${e.roomName}|${e.kelas}`;
 
   if (readOnly) {
     return (
-      <tr className="border-b border-slate-100 align-top">
+      <tr className={`border-b border-slate-100 align-top ${resampling ? "bg-blue-50/40" : ""}`}>
         <td className="px-2 py-1.5 text-sm text-slate-600">{fullDateID(entry.tanggal)}</td>
-        <td className="px-2 py-1.5 text-sm text-slate-600">{entry.roomName}</td>
+        <td className="px-2 py-1.5 text-sm text-slate-600">
+          <div className="space-y-1">
+            <span>{entry.roomName}</span>
+            <div><ResampleBadge entries={entries} entry={entry} /></div>
+            {entry.catatan && <p className="text-[11px] italic text-slate-400">{entry.catatan}</p>}
+          </div>
+        </td>
         <td className="px-2 py-1.5"><span className="inline-block w-14 rounded bg-slate-100 px-2 py-1 text-center text-sm font-medium text-slate-600">{entry.kelas}</span></td>
         {["settle", "contact", "air"].map((p) => (
           <td key={p} className="px-2 py-1.5 text-center text-sm text-slate-600">{entry[p] === null || entry[p] === undefined || entry[p] === "" ? "-" : entry[p]}</td>
@@ -969,75 +1027,144 @@ function EntryRow({ entry, masterRooms, onChange, onDelete, readOnly = false, ca
     if (room) onChange({ ...entry, _custom: false, _sourceCode: room.code, roomName: room.name, kelas: room.kelas });
   };
 
+  // Memilih sampling asli sekaligus menyalin ruangan & kelasnya, supaya uji
+  // ulang pasti menunjuk ke titik yang benar-benar sama.
+  const handleRefPick = (val) => {
+    const target = deviationOptions.find((e) => refKey(e) === val);
+    if (!target) {
+      onChange({ ...entry, refTanggal: "" });
+      return;
+    }
+    const room = masterRooms.find((r) => r.name === target.roomName && r.kelas === target.kelas);
+    onChange({
+      ...entry,
+      refTanggal: target.tanggal,
+      roomName: target.roomName,
+      kelas: target.kelas,
+      _custom: !room,
+      _sourceCode: room ? room.code : null,
+    });
+  };
+
   return (
-    <tr className="border-b border-slate-100 align-top">
-      <td className="px-2 py-1.5">
-        <input type="date" className="w-36 rounded border border-slate-200 px-2 py-1 text-sm"
-          value={entry.tanggal || ""} onChange={(ev) => onChange({ ...entry, tanggal: ev.target.value })}
-          onClick={(ev) => ev.currentTarget.showPicker?.()} />
-      </td>
-      <td className="px-2 py-1.5">
-        <select className="w-56 rounded border border-slate-200 px-2 py-1 text-sm"
-          value={entry._custom ? "__custom__" : entry._sourceCode || "__custom__"}
-          onChange={(ev) => handleRoomPick(ev.target.value)}>
-          <option value="__custom__">-- Input manual --</option>
-          {CLASS_ORDER.map((k) => {
-            const rooms = masterRooms.filter((r) => r.kelas === k);
-            if (rooms.length === 0) return null;
-            return (
-              <optgroup key={k} label={`Kelas ${k}`}>
-                {rooms.map((r) => (
-                  <option key={r.code} value={r.code}>{r.code} — {r.name}</option>
-                ))}
-              </optgroup>
-            );
-          })}
-        </select>
-        {isCustom && (
-          <input type="text" className="mt-1 w-56 rounded border border-slate-200 px-2 py-1 text-sm"
-            placeholder="Nama ruangan" value={entry.roomName || ""}
-            onChange={(ev) => onChange({ ...entry, roomName: ev.target.value })} />
-        )}
-      </td>
-      <td className="px-2 py-1.5">
-        {isCustom ? (
-          <select className="w-20 rounded border border-slate-200 px-2 py-1 text-sm"
-            value={entry.kelas || ""} onChange={(ev) => onChange({ ...entry, kelas: ev.target.value })}>
-            <option value="">-</option>
-            {CLASS_ORDER.map((k) => <option key={k} value={k}>{k}</option>)}
-          </select>
-        ) : (
-          <span className="inline-block w-20 rounded bg-slate-100 px-2 py-1 text-center text-sm font-medium text-slate-600">
-            {entry.kelas}
-          </span>
-        )}
-      </td>
-      {["settle", "contact", "air"].map((p) => (
-        <td key={p} className="px-2 py-1.5">
-          <input type="text" className="w-20 rounded border border-slate-200 px-2 py-1 text-center text-sm"
-            placeholder="-" value={entry[p] === null || entry[p] === undefined ? "" : entry[p]}
+    <>
+      <tr className={`align-top ${resampling ? "border-b-0 bg-blue-50/40" : "border-b border-slate-100"}`}>
+        <td className="px-2 py-1.5">
+          <input type="date" className="w-36 rounded border border-slate-200 px-2 py-1 text-sm"
+            value={entry.tanggal || ""} onChange={(ev) => onChange({ ...entry, tanggal: ev.target.value })}
+            onClick={(ev) => ev.currentTarget.showPicker?.()} />
+          <select
+            className="mt-1 w-36 rounded border border-slate-200 px-2 py-1 text-xs"
+            value={entry.tipe || ENTRY_TYPE.RUTIN}
             onChange={(ev) => {
-              const raw = ev.target.value.trim();
-              const val = raw === "-" ? null : raw;
-              onChange({ ...entry, [p]: val });
-            }} />
+              const tipe = ev.target.value;
+              onChange({ ...entry, tipe, refTanggal: tipe === ENTRY_TYPE.RESAMPLING ? entry.refTanggal || "" : "" });
+            }}
+          >
+            <option value={ENTRY_TYPE.RUTIN}>Sampling rutin</option>
+            <option value={ENTRY_TYPE.RESAMPLING}>Uji ulang</option>
+          </select>
         </td>
-      ))}
-      <td className="px-2 py-1.5 text-center">
-        {canDelete && (
-          <button onClick={onDelete} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500" title="Hapus baris">
-            <Trash2 size={15} />
-          </button>
-        )}
-      </td>
-    </tr>
+        <td className="px-2 py-1.5">
+          <select className="w-56 rounded border border-slate-200 px-2 py-1 text-sm"
+            value={entry._custom ? "__custom__" : entry._sourceCode || "__custom__"}
+            onChange={(ev) => handleRoomPick(ev.target.value)}>
+            <option value="__custom__">-- Input manual --</option>
+            {CLASS_ORDER.map((k) => {
+              const rooms = masterRooms.filter((r) => r.kelas === k);
+              if (rooms.length === 0) return null;
+              return (
+                <optgroup key={k} label={`Kelas ${k}`}>
+                  {rooms.map((r) => (
+                    <option key={r.code} value={r.code}>{r.code} — {r.name}</option>
+                  ))}
+                </optgroup>
+              );
+            })}
+          </select>
+          {isCustom && (
+            <input type="text" className="mt-1 w-56 rounded border border-slate-200 px-2 py-1 text-sm"
+              placeholder="Nama ruangan" value={entry.roomName || ""}
+              onChange={(ev) => onChange({ ...entry, roomName: ev.target.value })} />
+          )}
+          {!resampling && <div className="mt-1"><ResampleBadge entries={entries} entry={entry} /></div>}
+        </td>
+        <td className="px-2 py-1.5">
+          {isCustom ? (
+            <select className="w-20 rounded border border-slate-200 px-2 py-1 text-sm"
+              value={entry.kelas || ""} onChange={(ev) => onChange({ ...entry, kelas: ev.target.value })}>
+              <option value="">-</option>
+              {CLASS_ORDER.map((k) => <option key={k} value={k}>{k}</option>)}
+            </select>
+          ) : (
+            <span className="inline-block w-20 rounded bg-slate-100 px-2 py-1 text-center text-sm font-medium text-slate-600">
+              {entry.kelas}
+            </span>
+          )}
+        </td>
+        {["settle", "contact", "air"].map((p) => (
+          <td key={p} className="px-2 py-1.5">
+            <input type="text" className="w-20 rounded border border-slate-200 px-2 py-1 text-center text-sm"
+              placeholder="-" value={entry[p] === null || entry[p] === undefined ? "" : entry[p]}
+              onChange={(ev) => {
+                const raw = ev.target.value.trim();
+                const val = raw === "-" ? null : raw;
+                onChange({ ...entry, [p]: val });
+              }} />
+          </td>
+        ))}
+        <td className="px-2 py-1.5 text-center">
+          {canDelete && (
+            <button onClick={onDelete} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500" title="Hapus baris">
+              <Trash2 size={15} />
+            </button>
+          )}
+        </td>
+      </tr>
+
+      {resampling && (
+        <tr className="border-b border-slate-100 bg-blue-50/40">
+          <td />
+          <td colSpan={5} className="px-2 pb-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-semibold text-blue-800">Mengulang sampling:</span>
+              <select
+                className="min-w-[18rem] rounded border border-blue-200 bg-white px-2 py-1 text-xs"
+                value={entry.refTanggal ? `${entry.refTanggal}|${entry.roomName}|${entry.kelas}` : ""}
+                onChange={(ev) => handleRefPick(ev.target.value)}
+              >
+                <option value="">-- pilih titik yang menyimpang --</option>
+                {deviationOptions.map((e) => (
+                  <option key={refKey(e)} value={refKey(e)}>
+                    {fullDateID(e.tanggal)} — {e.roomName} (Kelas {e.kelas})
+                  </option>
+                ))}
+              </select>
+              <input
+                type="text"
+                className="min-w-[16rem] flex-1 rounded border border-blue-200 bg-white px-2 py-1 text-xs"
+                placeholder="Catatan (mis. alasan & tindakan yang dilakukan sebelum uji ulang)"
+                value={entry.catatan || ""}
+                onChange={(ev) => onChange({ ...entry, catatan: ev.target.value })}
+              />
+            </div>
+            {!entry.refTanggal && (
+              <p className="mt-1 text-[11px] text-amber-700">
+                Belum menunjuk sampling asli — penyimpangan tidak akan tercatat sebagai sudah ditindaklanjuti.
+              </p>
+            )}
+          </td>
+          <td />
+        </tr>
+      )}
+    </>
   );
 }
 
 function EntryEditor({ masterRooms, entries, setEntries, onSave, saving, canInput = false, canDeleteExisting = false, accessNote }) {
   const addRow = () => {
     const defaultTanggal = entries[0]?.tanggal || todayISO();
-    setEntries([{ id: uid(), tanggal: defaultTanggal, roomName: "", kelas: "", settle: "", contact: "", air: "", _custom: true, _sourceCode: null }, ...entries]);
+    setEntries([{ id: uid(), tanggal: defaultTanggal, roomName: "", kelas: "", settle: "", contact: "", air: "", tipe: ENTRY_TYPE.RUTIN, refTanggal: "", catatan: "", _custom: true, _sourceCode: null }, ...entries]);
   };
   const isExistingRow = (e) => typeof e.id === "string" && e.id.startsWith("row-");
   return (
@@ -1074,7 +1201,7 @@ function EntryEditor({ masterRooms, entries, setEntries, onSave, saving, canInpu
             </thead>
             <tbody>
               {entries.map((e, idx) => (
-                <EntryRow key={e.id} entry={e} masterRooms={masterRooms}
+                <EntryRow key={e.id} entry={e} entries={entries} masterRooms={masterRooms}
                   readOnly={!canInput}
                   canDelete={canDeleteExisting || !isExistingRow(e)}
                   onChange={(next) => { const c = entries.slice(); c[idx] = next; setEntries(c); }}
@@ -1087,6 +1214,8 @@ function EntryEditor({ masterRooms, entries, setEntries, onSave, saving, canInpu
       {canInput && (
         <p className="mt-2 text-xs text-slate-400">
           Isi "-" untuk titik yang tidak diuji bulan ini. Ruangan yang sama boleh muncul lebih dari satu kali dengan tanggal berbeda.
+          Untuk hasil sampling ulang, ubah jenis baris menjadi <b>Uji ulang</b> lalu pilih sampling asli yang diulang —
+          nilai aslinya tetap tersimpan, dan penyimpangan akan tercatat sebagai sudah ditindaklanjuti bila hasil uji ulang memenuhi syarat.
           {!canDeleteExisting && " Baris yang sudah tersimpan tidak bisa dihapus — hubungi Supervisor/Manager QC untuk menghapus."}
         </p>
       )}
@@ -1279,11 +1408,13 @@ function DashboardOverview({ monthKey, setMonthKey, statusIndex, loadingStatus, 
   );
 }
 
-function keteranganMS(entry) {
+// TMS hanya kalau melebihi batas Syarat DAN belum ditutup oleh uji ulang yang
+// hasilnya memenuhi syarat.
+function keteranganMS(entry, allEntries) {
   let maxLevel = 0;
   PARAM_DEFS.forEach((p) => {
-    const s = getStatus(entry[p.key], p.key, entry.kelas);
-    if (s.level > maxLevel) maxLevel = s.level;
+    const st = paramStatus(allEntries || [entry], entry, p.key);
+    if (st.level > maxLevel) maxLevel = st.level;
   });
   return maxLevel >= 4 ? "TMS" : "MS";
 }
@@ -1479,7 +1610,7 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
               </thead>
               <tbody>
                 {roomsThisDate.map((e, idx) => {
-                  const ket = keteranganMS(e);
+                  const ket = keteranganMS(e, entriesForMonth);
                   return (
                     <tr key={e.id || idx}>
                       <td className="border border-slate-300 px-2 py-1 text-center">{idx + 1}</td>
@@ -1585,6 +1716,75 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
 /* =========================================================================
    8. HALAMAN PENGKAJIAN QA
    ========================================================================= */
+// Rekap seluruh titik yang menyentuh Alert/Action Limit atau melebihi batas
+// Syarat pada periode ini, beserta status tindak lanjutnya. Panel ini sengaja
+// ikut tercetak: saat inspeksi, inilah bukti bahwa setiap penyimpangan sudah
+// ditindaklanjuti dengan uji ulang dan bagaimana hasilnya.
+function DeviationPanel({ entries }) {
+  const items = useMemo(() => deviationSummary(entries), [entries]);
+  if (items.length === 0) return null;
+
+  const belum = items.filter((it) => !it.resolved).length;
+
+  return (
+    <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-bold text-slate-700">Tindak Lanjut Penyimpangan (Uji Ulang)</h3>
+        <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${belum > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+          {belum > 0 ? `${belum} belum ditindaklanjuti` : "Seluruhnya sudah ditindaklanjuti"}
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
+              <th className="px-3 py-2">Tanggal</th>
+              <th className="px-3 py-2">Ruangan</th>
+              <th className="px-3 py-2">Parameter</th>
+              <th className="px-3 py-2 text-center">Hasil Awal</th>
+              <th className="px-3 py-2">Tindak Lanjut</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it, i) => {
+              const awal = getStatus(it.value, it.paramKey, it.kelas);
+              return (
+                <tr key={i} className="border-b border-slate-100 align-top">
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{fullDateID(it.tanggal)}</td>
+                  <td className="px-3 py-2 text-slate-600">{it.roomName} <span className="text-slate-400">(Kelas {it.kelas})</span></td>
+                  <td className="px-3 py-2 text-slate-600">{it.paramLabel}</td>
+                  <td className="px-3 py-2 text-center">
+                    <span className="rounded px-2 py-0.5 text-xs font-bold" style={{ color: awal.color, background: awal.bg }}>
+                      {displayValue(it.value, it.kelas, it.paramKey)} · {awal.label}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    {it.resolved ? (
+                      <span className="text-xs text-emerald-700">
+                        Uji ulang {fullDateID(it.resample.tanggal)} — hasil{" "}
+                        <b>{displayValue(it.resample[it.paramKey], it.resample.kelas, it.paramKey)}</b>, memenuhi syarat.
+                        {it.resample.catatan ? ` ${it.resample.catatan}` : ""}
+                      </span>
+                    ) : it.openResample ? (
+                      <span className="text-xs text-red-700">
+                        Uji ulang {fullDateID(it.openResample.tanggal)} — hasil{" "}
+                        <b>{displayValue(it.openResample[it.paramKey], it.openResample.kelas, it.paramKey)}</b>, masih menyimpang.
+                        Perlu investigasi lanjutan.
+                      </span>
+                    ) : (
+                      <span className="text-xs text-amber-700">Belum ada hasil uji ulang yang dicatat.</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, session, token }) {
   const facility = FACILITIES.find((f) => f.key === facilityKey);
 
@@ -1848,12 +2048,6 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
 
       {saveError && <p className="no-print mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600">{saveError}</p>}
 
-      {!session && (
-        <div className="no-print mb-4 rounded-lg bg-blue-50 px-4 py-2.5 text-sm text-blue-700">
-          Anda melihat mode publik — hanya data hasil pengujian yang ditampilkan. Login sebagai Tamu untuk melihat grafik &amp; pembahasan/pengkajian lengkap, atau sebagai Staff/Supervisor/Manager untuk mengisi/menyetujui data.
-        </div>
-      )}
-
       <div className="no-print mb-5">
         <EntryEditor masterRooms={masterRooms} entries={entries} setEntries={setEntries} onSave={saveEntriesOnly} saving={saving}
           canInput={canInputQC && !isLocked} canDeleteExisting={canDeleteQC && !isLocked}
@@ -1863,6 +2057,8 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
               : session ? "Staff/Supervisor/Manager QC atau Supervisor/Manager QA yang bisa mengisi data" : "Login untuk mengisi data"
           } />
       </div>
+
+      <DeviationPanel entries={entries} />
 
       <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
         <h3 className="mb-3 text-sm font-bold text-slate-700">Persyaratan</h3>

@@ -141,3 +141,108 @@ export function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+// =============================================================================
+// UJI ULANG / RE-SAMPLING
+// =============================================================================
+// Ketika sebuah titik melampaui Alert/Action Limit atau batas Syarat, tindak
+// lanjutnya adalah pengambilan sampel ulang (bisa di hari yang sama, bisa di
+// hari berikutnya dalam waktu sesegera mungkin). Hasil uji ulang itu dicatat
+// sebagai baris tersendiri yang MENUNJUK ke sampling aslinya, bukan menimpa
+// atau menghapus nilai aslinya — data asli harus tetap terlihat agar jejak
+// penyimpangan dan tindak lanjutnya bisa ditelusuri saat inspeksi.
+//
+// Sebuah penyimpangan dinyatakan SELESAI (closed) bila hasil uji ulang TERAKHIR
+// untuk parameter yang sama sudah kembali terkendali. Kalau uji ulang masih
+// menyimpang, penyimpangan tetap terbuka dan uji ulang itu sendiri jadi temuan
+// baru yang perlu ditindaklanjuti lagi.
+
+export const ENTRY_TYPE = { RUTIN: "rutin", RESAMPLING: "resampling" };
+
+export function isResampling(entry) {
+  return entry?.tipe === ENTRY_TYPE.RESAMPLING;
+}
+
+function sameRoom(a, b) {
+  return a.roomName === b.roomName && a.kelas === b.kelas;
+}
+
+// Semua baris uji ulang yang menunjuk ke satu sampling asli, untuk satu
+// parameter, diurutkan dari yang paling awal ke paling akhir.
+export function resamplesFor(entries, original, paramKey) {
+  return (entries || [])
+    .filter(
+      (e) =>
+        isResampling(e) &&
+        e.refTanggal &&
+        e.refTanggal === original.tanggal &&
+        sameRoom(e, original) &&
+        e[paramKey] !== null &&
+        e[paramKey] !== undefined &&
+        e[paramKey] !== ""
+    )
+    .sort((a, b) => String(a.tanggal).localeCompare(String(b.tanggal)));
+}
+
+// Status satu parameter pada satu baris, SUDAH memperhitungkan uji ulang.
+// - level      : level efektif (yang dipakai untuk warna, notifikasi, dan
+//                status keseluruhan fasilitas)
+// - originalLevel : level dari nilai aslinya, tetap dilaporkan apa adanya
+// - resolved   : true bila penyimpangan sudah ditutup oleh uji ulang
+// - resample   : baris uji ulang terakhir yang dipakai sebagai dasar penutupan
+export function paramStatus(entries, entry, paramKey) {
+  const originalLevel = getStatusLevel(entry[paramKey], paramKey, entry.kelas);
+  const base = { level: originalLevel, originalLevel, resolved: false, resample: null, openResample: null };
+  if (originalLevel < 2 || isResampling(entry)) return base;
+
+  const list = resamplesFor(entries, entry, paramKey);
+  if (list.length === 0) return base;
+
+  const last = list[list.length - 1];
+  const lastLevel = getStatusLevel(last[paramKey], paramKey, last.kelas);
+  if (lastLevel <= 1) {
+    return { level: 1, originalLevel, resolved: true, resample: last, openResample: null };
+  }
+  // Uji ulang sudah dilakukan tapi hasilnya masih menyimpang.
+  return { ...base, openResample: last };
+}
+
+// Level tertinggi satu baris (lintas parameter), sudah memperhitungkan uji ulang.
+export function entryEffectiveLevel(entries, entry) {
+  let max = 0;
+  PARAM_DEFS.forEach((p) => {
+    const st = paramStatus(entries, entry, p.key);
+    if (st.level > max) max = st.level;
+  });
+  return max;
+}
+
+// Ringkasan seluruh penyimpangan pada satu periode, beserta status tindak
+// lanjutnya. Dipakai panel "Tindak Lanjut Penyimpangan" dan generator narasi.
+export function deviationSummary(entries) {
+  const items = [];
+  (entries || []).forEach((entry) => {
+    if (isResampling(entry)) return;
+    PARAM_DEFS.forEach((p) => {
+      const st = paramStatus(entries, entry, p.key);
+      if (st.originalLevel < 2) return;
+      items.push({
+        entry,
+        paramKey: p.key,
+        paramLabel: p.short,
+        roomName: entry.roomName,
+        kelas: entry.kelas,
+        tanggal: entry.tanggal,
+        value: entry[p.key],
+        originalLevel: st.originalLevel,
+        level: st.level,
+        resolved: st.resolved,
+        resample: st.resample,
+        openResample: st.openResample,
+      });
+    });
+  });
+  return items.sort(
+    (a, b) => b.originalLevel - a.originalLevel || String(a.tanggal).localeCompare(String(b.tanggal))
+  );
+}

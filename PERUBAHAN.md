@@ -14,7 +14,48 @@
 
 ---
 
-## 0. Data pengujian sekarang wajib login
+## 0. Uji Ulang (Re-sampling)
+
+Hasil yang melampaui Alert/Action Limit atau batas Syarat kini bisa ditutup
+dengan mencatat hasil **uji ulang** — nilai aslinya **tidak dihapus dan tidak
+ditimpa**, karena jejak penyimpangan beserta tindak lanjutnya justru itu yang
+dicari saat inspeksi BPOM.
+
+**Cara pakai:** pada tabel Input Data Bulanan, tambah baris baru, ubah jenisnya
+dari *Sampling rutin* menjadi **Uji ulang**, lalu pilih titik sampling asli yang
+diulang dari daftar dropdown (ruangan & kelasnya ikut tersalin otomatis). Isi
+tanggal uji ulang — boleh hari yang sama, boleh hari berikutnya — beserta
+hasilnya dan catatan tindakan yang dilakukan.
+
+**Efeknya:**
+- Kalau hasil uji ulang **memenuhi syarat** → penyimpangan dinyatakan selesai.
+  Status fasilitas kembali Terkendali dan notifikasinya hilang, tapi baris
+  aslinya tetap tampil dengan label *"Sudah diuji ulang — memenuhi syarat"*.
+- Kalau hasil uji ulang **masih menyimpang** → penyimpangan tetap terbuka dan
+  ditandai perlu investigasi lanjutan.
+- Kalau **belum ada uji ulang** → tetap muncul sebagai temuan yang belum
+  ditindaklanjuti.
+- Penilaian dilakukan **per parameter**, jadi kalau yang menyimpang hanya Cawan
+  Papar, cukup parameter itu yang perlu hasil uji ulangnya.
+- Kalau ada beberapa kali uji ulang, yang dipakai adalah **hasil terakhir**.
+
+**Panel baru "Tindak Lanjut Penyimpangan (Uji Ulang)"** di halaman fasilitas
+merekap semua titik yang menyimpang beserta status tindak lanjutnya, dan ikut
+tercetak — inilah bukti ringkas untuk inspeksi.
+
+**Narasi ikut menyesuaikan.** Pembahasan per kelas mendapat bagian *"Tindak
+Lanjut dan Uji Ulang"* yang menyebut tanggal dan hasil uji ulangnya. Kesimpulan
+umum juga berubah: kalau semua temuan sudah ditutup, narasinya berbunyi bahwa
+uji ulang **telah dilakukan** dan hasilnya kembali memenuhi persyaratan, bukan
+lagi menyuruh melakukan re-sampling. Instruksi yang sama diberikan ke generator
+AI supaya narasi AI tidak salah tulis.
+
+**Perubahan struktur data:** tab `Data_<Fasilitas>` bertambah 3 kolom —
+`Tipe`, `RefTanggal`, `Catatan` (kolom H, I, J). Header ini **ditulis otomatis**
+saat penyimpanan pertama setelah update, jadi tidak perlu diedit manual. Baris
+lama yang hanya 7 kolom tetap terbaca dan otomatis dianggap sampling rutin.
+
+## 0b. Data pengujian sekarang wajib login
 
 Sebelumnya seluruh data bisa dibaca **tanpa akun sama sekali** — bukan hanya di
 tampilan web ("mode publik"), tapi juga dengan membuka URL `/exec` Apps Script

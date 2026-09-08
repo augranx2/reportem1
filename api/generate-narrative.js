@@ -65,6 +65,12 @@ Kesimpulan
 
 KETENTUAN PENTING soal istilah "penyimpangan": hasil yang mencapai Alert Limit atau Action Limit BUKAN penyimpangan — itu masih di bawah batas Syarat (spesifikasi), jadi masih memenuhi persyaratan. Untuk hasil seperti itu, JANGAN pakai kata "penyimpangan", dan jangan sarankan tindakan berat seperti investigasi RCA/CAPA formal atau re-sampling wajib. Cukup sebutkan bahwa nilai tersebut perlu dievaluasi pada hasil pengujian periode berikutnya untuk memastikan sudah membaik/menurun atau masih menunjukkan tren yang sama, dan boleh menyinggung peninjauan efektivitas sanitasi/higiene personel pada area terkait sebagai langkah pencegahan yang wajar dan mudah diterapkan di lapangan. Istilah "penyimpangan" HANYA dipakai kalau ada hasil yang benar-benar melampaui batas Syarat (spesifikasi) — dalam kasus itu baru sarankan investigasi dan pengujian ulang (re-sampling).
 
+KETENTUAN soal UJI ULANG (re-sampling): setiap temuan pada "breaches" membawa field "statusTindakLanjut" dan "tindakLanjut". Wajib patuhi ini:
+- Kalau statusTindakLanjut = "selesai": uji ulang SUDAH dilakukan dan hasilnya sudah memenuhi syarat. Tulis dalam bentuk lampau — sebutkan tanggal dan nilai hasil uji ulangnya, lalu nyatakan bahwa penyimpangan tersebut telah ditindaklanjuti dan ditutup. JANGAN menyuruh melakukan re-sampling untuk temuan ini, dan jangan menyebutnya sebagai temuan yang masih terbuka.
+- Kalau statusTindakLanjut = "masih menyimpang": uji ulang sudah dilakukan tapi hasilnya masih di luar batas. Sarankan investigasi lanjutan beserta CAPA.
+- Kalau statusTindakLanjut = "belum ditindaklanjuti": barulah sarankan investigasi dan pengujian ulang (re-sampling) sesegera mungkin.
+Bila SELURUH temuan berstatus "selesai", kesimpulan akhir harus menyatakan bahwa kondisi lingkungan telah kembali terkendali setelah uji ulang, bukan bahwa fasilitas masih memerlukan tindak lanjut.
+
 Untuk "kesimpulanUmum": tulis ringkasan akhir seluruh kelas pada periode ini (bukan per-kelas lagi, tapi rekap singkat tiap kelas digabung jadi satu narasi mengalir, 5-8 kalimat/beberapa paragraf pendek), kaitkan dengan kondisi bulan sebelumnya bila relevan, gunakan kata "terkendali" (bukan "state of control"), terapkan ketentuan istilah "penyimpangan" di atas secara konsisten, dan DIAKHIRI dengan pernyataan tegas apakah fasilitas ini memenuhi persyaratan Standar CPOB tahun 2024 dan 2025 yang berlaku serta status kualifikasi lingkungan periode ini.
 
 Balas HANYA dengan JSON valid (tanpa markdown, tanpa teks lain) dengan struktur persis:

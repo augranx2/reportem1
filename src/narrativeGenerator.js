@@ -13,6 +13,8 @@ import {
   getStatusLevel,
   displayValue,
   fullDateID,
+  isResampling,
+  paramStatus,
 } from "./limits.js";
 
 const KELAS_INTRO = {
@@ -77,6 +79,46 @@ function paramNarrative(paramKey, paramShort, kelas, kelasEntries) {
   return text;
 }
 
+// Narasi tindak lanjut: menyebutkan uji ulang yang sudah dilakukan beserta
+// hasilnya. Ini bagian yang menjadi bukti saat inspeksi bahwa setiap hasil di
+// luar batas sudah ditindaklanjuti, bukan sekadar dicatat.
+function resamplingNarrative(breachesInClass, kelas) {
+  if (breachesInClass.length === 0) return null;
+  const selesai = breachesInClass.filter((b) => b.resolved);
+  const masihTerbuka = breachesInClass.filter((b) => b.openResample && !b.resolved);
+  const belumDiuji = breachesInClass.filter((b) => !b.resolved && !b.openResample);
+  const kalimat = [];
+
+  if (selesai.length > 0) {
+    const rincian = selesai
+      .map(
+        (b) =>
+          `${b.parameter} pada area ${b.roomName} tanggal ${fullDateID(b.tanggal)} (${b.value}) telah diuji ulang pada tanggal ${fullDateID(b.resample.tanggal)} dengan hasil ${displayValue(b.resample[b.paramKey], kelas, b.paramKey)}`
+      )
+      .join("; ");
+    kalimat.push(
+      `Terhadap hasil yang berada di luar batas kendali telah dilakukan pengambilan sampel ulang (re-sampling), yaitu ${rincian}. Seluruh hasil uji ulang tersebut telah kembali memenuhi persyaratan sehingga penyimpangan dinyatakan telah ditindaklanjuti dan ditutup.`
+    );
+  }
+  if (masihTerbuka.length > 0) {
+    const rincian = masihTerbuka
+      .map((b) => `${b.parameter} pada area ${b.roomName} tanggal ${fullDateID(b.tanggal)}`)
+      .join("; ");
+    kalimat.push(
+      `Uji ulang telah dilakukan pada ${rincian}, namun hasilnya masih berada di luar batas kendali sehingga diperlukan investigasi lanjutan beserta tindakan perbaikan dan pencegahan (CAPA).`
+    );
+  }
+  if (belumDiuji.length > 0) {
+    const rincian = belumDiuji
+      .map((b) => `${b.parameter} pada area ${b.roomName} tanggal ${fullDateID(b.tanggal)}`)
+      .join("; ");
+    kalimat.push(
+      `Hasil pada ${rincian} belum disertai pencatatan hasil uji ulang sehingga perlu segera ditindaklanjuti.`
+    );
+  }
+  return kalimat.join(" ");
+}
+
 function classConclusion(kelas, breachesInClass) {
   if (breachesInClass.length === 0) {
     return `Lingkungan Kelas ${kelas} berada dalam kondisi terkendali. Seluruh parameter monitoring memenuhi persyaratan yang ditetapkan tanpa adanya hasil yang mencapai Alert maupun Action Limit.`;
@@ -105,14 +147,28 @@ export function generateLocalNarrative({ facilityLabel, monthLabel, classes, ent
 
     const breachesInClass = [];
     kelasEntries.forEach((e) => {
+      // Baris uji ulang tidak dihitung sebagai temuan tersendiri — ia adalah
+      // tindak lanjut dari sampling asli yang sudah dicatat di bawah ini.
+      if (isResampling(e)) return;
       PARAM_DEFS.forEach((p) => {
         const limit = getLimit(p.key, k);
         if (!limit) return;
         const val = e[p.key];
         if (val === null || val === undefined || val === "" || val === "-") return;
-        const level = getStatusLevel(val, p.key, k);
-        if (level >= 2) {
-          const breachObj = { kelas: k, roomName: e.roomName || "Ruangan", tanggal: e.tanggal, parameter: p.short, value: displayValue(val, k, p.key), level };
+        const st = paramStatus(entries || [], e, p.key);
+        if (st.originalLevel >= 2) {
+          const breachObj = {
+            kelas: k,
+            roomName: e.roomName || "Ruangan",
+            tanggal: e.tanggal,
+            parameter: p.short,
+            value: displayValue(val, k, p.key),
+            level: st.originalLevel,
+            resolved: st.resolved,
+            resample: st.resample,
+            openResample: st.openResample,
+            paramKey: p.key,
+          };
           breachesInClass.push(breachObj);
           allBreaches.push(breachObj);
         }
@@ -125,6 +181,9 @@ export function generateLocalNarrative({ facilityLabel, monthLabel, classes, ent
       const text = paramNarrative(p.key, p.short, k, kelasEntries);
       if (text) sections.push(`Hasil dan Tren ${p.short}\n${text}`);
     });
+
+    const tindakLanjutText = resamplingNarrative(breachesInClass, k);
+    if (tindakLanjutText) sections.push(`Tindak Lanjut dan Uji Ulang\n${tindakLanjutText}`);
 
     sections.push(`Kesimpulan\n${classConclusion(k, breachesInClass)}`);
     perKelas[k] = sections.join("\n\n");
@@ -140,12 +199,16 @@ export function generateLocalNarrative({ facilityLabel, monthLabel, classes, ent
   } else {
     const hasDeviation = allBreaches.some((b) => b.level >= 4);
     const hasAlertAction = allBreaches.length > 0;
+    // Semua temuan sudah ditutup oleh uji ulang yang hasilnya memenuhi syarat?
+    const semuaSudahDiujiUlang = hasAlertAction && allBreaches.every((b) => b.resolved);
 
     const intro = `Berdasarkan evaluasi trend data Environment Monitoring (EM) Viable periode ${monthLabel} pada fasilitas ${facilityLabel}, dapat disimpulkan bahwa kondisi lingkungan produksi pada seluruh kelas ruangan (${classes.map((k) => `Kelas ${k}`).join(", ")}) ${
       !hasAlertAction
         ? "berada dalam keadaan terkendali dan memenuhi persyaratan Standar CPOB yang berlaku."
         : hasDeviation
-          ? "secara umum masih berada dalam keadaan terkendali, dengan satu atau lebih titik yang melampaui batas persyaratan (penyimpangan) dan memerlukan tindak lanjut."
+          ? semuaSudahDiujiUlang
+            ? "secara umum masih berada dalam keadaan terkendali, dengan satu atau lebih titik yang melampaui batas persyaratan (penyimpangan) yang seluruhnya telah ditindaklanjuti melalui pengambilan sampel ulang (re-sampling) dengan hasil memenuhi persyaratan."
+            : "secara umum masih berada dalam keadaan terkendali, dengan satu atau lebih titik yang melampaui batas persyaratan (penyimpangan) dan memerlukan tindak lanjut."
           : "secara umum masih berada dalam keadaan terkendali dan memenuhi persyaratan (spesifikasi) yang ditetapkan, dengan beberapa hasil yang mencapai Alert/Action Limit namun belum dikategorikan sebagai penyimpangan."
     }`;
 
@@ -162,6 +225,8 @@ export function generateLocalNarrative({ facilityLabel, monthLabel, classes, ent
 
     const closing = !hasAlertAction
       ? `Secara keseluruhan, variasi hasil yang diperoleh masih mencerminkan kondisi operasional normal dan tidak menunjukkan adanya kecenderungan peningkatan cemaran mikrobiologi yang signifikan. Dengan demikian, program Environment Monitoring (EM) Viable periode ${monthLabel} masih efektif dalam memantau dan mengendalikan kondisi lingkungan produksi sehingga tetap mendukung proses pembuatan produk sesuai persyaratan mutu dan Standar CPOB tahun 2024 dan 2025 yang berlaku.`
+      : semuaSudahDiujiUlang
+        ? `Secara keseluruhan, seluruh hasil yang berada di luar batas kendali pada periode ini telah ditindaklanjuti melalui pengambilan sampel ulang (re-sampling) dalam waktu sesegera mungkin, dan hasil uji ulang menunjukkan nilai yang kembali memenuhi persyaratan. Dengan demikian, kondisi lingkungan fasilitas ${facilityLabel} dinilai telah kembali terkendali dan program Environment Monitoring (EM) Viable periode ${monthLabel} tetap efektif dalam memantau serta mengendalikan kondisi lingkungan produksi sesuai Standar CPOB tahun 2024 dan 2025 yang berlaku.`
       : hasDeviation
         ? `Secara keseluruhan, diperlukan tindak lanjut berupa investigasi dan pengujian ulang (re-sampling) pada titik-titik yang mengalami penyimpangan. Fasilitas ${facilityLabel} tetap dapat digunakan dengan catatan dilakukan penanganan hingga diperoleh hasil yang terkendali secara konsisten sesuai Standar CPOB tahun 2024 dan 2025 yang berlaku.`
         : `Secara keseluruhan, hasil yang mencapai Alert/Action Limit pada periode ini masih berada dalam batas persyaratan (spesifikasi) sehingga belum dikategorikan sebagai penyimpangan. Disarankan untuk mengevaluasi hasil pengujian pada periode berikutnya guna memastikan nilai tersebut sudah menurun/membaik atau masih menunjukkan tren yang sama, termasuk meninjau efektivitas sanitasi dan higiene personel pada area terkait. Dengan demikian, program Environment Monitoring (EM) Viable periode ${monthLabel} tetap dinilai efektif dalam memantau dan mengendalikan kondisi lingkungan produksi sesuai Standar CPOB tahun 2024 dan 2025 yang berlaku.`;

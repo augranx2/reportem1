@@ -782,6 +782,28 @@ function getMaster_(facilityKey) {
 // ---------------------------------------------------------------------------
 // MONTHLY ENTRIES  (tab "..._Data": Bulan | Tanggal | Nama Ruangan | Kelas | Cawan Papar | Cawan Kontak | Air Sampler)
 // ---------------------------------------------------------------------------
+// Kolom tab Data_<Fasilitas>. Tiga kolom terakhir ditambahkan untuk mencatat
+// uji ulang (re-sampling); tab lama yang masih 7 kolom tetap terbaca dan akan
+// otomatis dilengkapi headernya saat penyimpanan berikutnya.
+const ENTRY_COLUMNS = [
+  "Bulan", "Tanggal", "Ruangan", "Kelas", "CawanPapar", "CawanKontak", "AirSampler",
+  "Tipe", "RefTanggal", "Catatan",
+];
+
+function ensureEntryHeader_(sheet) {
+  if (sheet.getMaxColumns() < ENTRY_COLUMNS.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), ENTRY_COLUMNS.length - sheet.getMaxColumns());
+  }
+  const header = sheet.getRange(1, 1, 1, ENTRY_COLUMNS.length).getValues()[0];
+  let perluTulis = false;
+  for (let i = 7; i < ENTRY_COLUMNS.length; i++) {
+    if (!header[i]) perluTulis = true;
+  }
+  if (perluTulis) {
+    sheet.getRange(1, 8, 1, 3).setValues([[ENTRY_COLUMNS[7], ENTRY_COLUMNS[8], ENTRY_COLUMNS[9]]]);
+  }
+}
+
 function getEntries_(facilityKey, month) {
   const cfg = FACILITIES[facilityKey];
   if (!cfg) return { error: "Fasilitas tidak dikenal: " + facilityKey };
@@ -802,6 +824,11 @@ function getEntries_(facilityKey, month) {
       settle: emptyToNull_(row[4]),
       contact: emptyToNull_(row[5]),
       air: emptyToNull_(row[6]),
+      // Kolom H/I/J — penanda uji ulang (re-sampling). Baris lama yang belum
+      // punya kolom ini otomatis dianggap sampling rutin.
+      tipe: row[7] === "resampling" ? "resampling" : "rutin",
+      refTanggal: row[8] ? formatDate_(row[8]) : "",
+      catatan: row[9] || "",
     });
   }
   return { facility: facilityKey, month: month, entries: entries };
@@ -838,12 +865,22 @@ function saveEntries_(facilityKey, month, entries) {
     e.settle === null || e.settle === undefined ? "" : e.settle,
     e.contact === null || e.contact === undefined ? "" : e.contact,
     e.air === null || e.air === undefined ? "" : e.air,
+    e.tipe === "resampling" ? "resampling" : "rutin",
+    e.tipe === "resampling" ? (e.refTanggal || "") : "",
+    e.catatan || "",
   ]);
 
-  const finalRows = kept.concat(newRows);
-  sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 1), 7).clearContent();
+  // Semua baris disamakan panjangnya jadi ENTRY_COLUMNS kolom supaya baris lama
+  // (yang cuma 7 kolom) tidak bikin setValues() gagal.
+  const finalRows = kept.concat(newRows).map(function (row) {
+    const r = row.slice(0, ENTRY_COLUMNS.length);
+    while (r.length < ENTRY_COLUMNS.length) r.push("");
+    return r;
+  });
+  ensureEntryHeader_(sheet);
+  sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 1), ENTRY_COLUMNS.length).clearContent();
   if (finalRows.length > 0) {
-    sheet.getRange(2, 1, finalRows.length, 7).setValues(finalRows);
+    sheet.getRange(2, 1, finalRows.length, ENTRY_COLUMNS.length).setValues(finalRows);
   }
   SpreadsheetApp.flush();
   return { ok: true, saved: newRows.length };
@@ -1062,16 +1099,54 @@ function levelFor_(rawValue, parameter, kelas) {
   return 4;
 }
 
+// --- UJI ULANG / RE-SAMPLING -------------------------------------------------
+// Cerminan dari logika yang sama di src/limits.js. Sebuah penyimpangan
+// dinyatakan selesai bila hasil uji ulang TERAKHIR untuk parameter yang sama
+// sudah kembali terkendali; nilai aslinya tetap tersimpan apa adanya.
+function isResampling_(entry) {
+  return entry && entry.tipe === "resampling";
+}
+
+function paramStatus_(entries, entry, paramKey) {
+  const originalLevel = levelFor_(entry[paramKey], paramKey, entry.kelas);
+  const base = { level: originalLevel, originalLevel: originalLevel, resolved: false };
+  if (originalLevel < 2 || isResampling_(entry)) return base;
+
+  const list = (entries || [])
+    .filter(function (e) {
+      return (
+        isResampling_(e) &&
+        e.refTanggal &&
+        e.refTanggal === entry.tanggal &&
+        e.roomName === entry.roomName &&
+        e.kelas === entry.kelas &&
+        e[paramKey] !== null && e[paramKey] !== undefined && e[paramKey] !== ""
+      );
+    })
+    .sort(function (a, b) { return String(a.tanggal).localeCompare(String(b.tanggal)); });
+
+  if (list.length === 0) return base;
+  const last = list[list.length - 1];
+  if (levelFor_(last[paramKey], paramKey, last.kelas) <= 1) {
+    return { level: 1, originalLevel: originalLevel, resolved: true };
+  }
+  return base;
+}
+
 function getStatusIndex_(month) {
   const out = {};
   Object.keys(FACILITIES).forEach((key) => {
     const res = getEntries_(key, month);
     const entries = res.entries || [];
     let maxLevel = 0;
+    let adaPenyimpanganTerbuka = false;
+    let adaPenyimpanganSelesai = false;
     entries.forEach((e) => {
       ["settle", "contact", "air"].forEach((p) => {
-        const lvl = levelFor_(e[p], p, e.kelas);
-        if (lvl > maxLevel) maxLevel = lvl;
+        const st = paramStatus_(entries, e, p);
+        if (st.level > maxLevel) maxLevel = st.level;
+        if (st.resolved) adaPenyimpanganSelesai = true;
+        else if (st.originalLevel >= 2 && !isResampling_(e)) adaPenyimpanganTerbuka = true;
       });
     });
     // Info tambahan untuk Pusat Notifikasi di website: sampai mana progres
@@ -1080,6 +1155,8 @@ function getStatusIndex_(month) {
     out[key] = {
       level: maxLevel,
       hasData: entries.length > 0,
+      openDeviation: adaPenyimpanganTerbuka,
+      resolvedDeviation: adaPenyimpanganSelesai,
       hasReport: !!rep.found,
       finalApproved: !!(rep.found && rep.signoff && rep.signoff.diperiksa && rep.signoff.diperiksa.nama),
       formulirQCComplete: entries.length > 0 && isFormulirQCCompleteForMonth_(key, month),
