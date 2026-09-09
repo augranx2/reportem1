@@ -77,11 +77,11 @@ import {
   monthLabel,
   prevMonthKey,
   todayISO,
+  RESAMPLE_LEVEL,
   ENTRY_TYPE,
   isResampling,
   paramStatus,
   entryEffectiveLevel,
-  deviationSummary,
 } from "./limits.js";
 
 /* =========================================================================
@@ -241,20 +241,30 @@ function buildStatsSummary(classes, entries) {
         const st = paramStatus(entries, e, p.key);
         if (st.level > maxLevel) maxLevel = st.level;
         if (st.originalLevel >= 2) {
+          const kategori =
+            st.originalLevel >= 4 ? "penyimpangan (melebihi batas Syarat/TMS)"
+              : st.originalLevel === 3 ? "OOT (melampaui Action Limit, masih di bawah batas Syarat)"
+                : "mencapai Alert Limit (masih aman, tidak perlu tindakan khusus)";
           breaches.push({
             room: e.roomName,
             tanggal: e.tanggal,
             parameter: p.short,
             value: displayValue(e[p.key], k, p.key),
             level: LEVEL_LABEL[st.originalLevel],
+            kategori,
             // Status tindak lanjut ikut dikirim ke AI supaya narasinya menulis
             // bahwa uji ulang sudah dilakukan, bukan menyuruh melakukannya.
-            tindakLanjut: st.resolved
-              ? `Sudah diuji ulang pada ${fullDateID(st.resample.tanggal)} dengan hasil ${displayValue(st.resample[p.key], k, p.key)} — memenuhi syarat.`
-              : st.openResample
-                ? `Sudah diuji ulang pada ${fullDateID(st.openResample.tanggal)} namun hasilnya masih menyimpang.`
-                : "Belum ada hasil uji ulang yang dicatat.",
-            statusTindakLanjut: st.resolved ? "selesai" : st.openResample ? "masih menyimpang" : "belum ditindaklanjuti",
+            // Hanya relevan untuk OOT ke atas.
+            tindakLanjut: st.originalLevel < RESAMPLE_LEVEL
+              ? "Tidak memerlukan sampling ulang."
+              : st.resolved
+                ? `Sudah dilakukan sampling ulang pada ${fullDateID(st.resample.tanggal)} dengan hasil ${displayValue(st.resample[p.key], k, p.key)} — sudah memenuhi syarat.`
+                : st.openResample
+                  ? `Sudah dilakukan sampling ulang pada ${fullDateID(st.openResample.tanggal)} namun hasilnya masih di luar batas.`
+                  : "Belum ada hasil sampling ulang yang dicatat.",
+            statusTindakLanjut: st.originalLevel < RESAMPLE_LEVEL
+              ? "tidak perlu"
+              : st.resolved ? "selesai" : st.openResample ? "masih di luar batas" : "belum ditindaklanjuti",
           });
         }
       });
@@ -683,14 +693,21 @@ function StatusPill({ level, hasData }) {
   if (level >= 4) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "#fee2e2", color: "#b91c1c" }}>
-        <AlertTriangle size={13} /> Melebihi Syarat
+        <AlertTriangle size={13} /> Penyimpangan (TMS)
       </span>
     );
   }
   if (level === 3) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "#ffedd5", color: "#c2410c" }}>
-        <AlertTriangle size={13} /> Terkendali (Action Limit)
+        <AlertTriangle size={13} /> OOT (Action Limit)
+      </span>
+    );
+  }
+  if (level === 2) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold" style={{ background: "#fef3c7", color: "#b45309" }}>
+        Terkendali (Alert Limit)
       </span>
     );
   }
@@ -721,9 +738,9 @@ function Cell({ value, kelas, parameter }) {
 function LegendRow() {
   const items = [
     { label: "Terkendali (< 1 CFU)", bg: "#dcfce7", color: "#15803d" },
-    { label: "Alert", bg: "#fef3c7", color: "#b45309" },
-    { label: "Action", bg: "#ffedd5", color: "#c2410c" },
-    { label: "Melebihi Syarat", bg: "#fee2e2", color: "#b91c1c" },
+    { label: "Alert (masih aman)", bg: "#fef3c7", color: "#b45309" },
+    { label: "OOT (> Action Limit)", bg: "#ffedd5", color: "#c2410c" },
+    { label: "Penyimpangan / TMS", bg: "#fee2e2", color: "#b91c1c" },
     { label: "N/A / Belum diuji", bg: "#f1f5f9", color: "#64748b" },
   ];
   return (
@@ -742,12 +759,12 @@ function statusForChartValue(value, limit) {
   if (limit.lessThan) {
     return value < 1
       ? { label: "Terkendali", color: "#15803d" }
-      : { label: "Melebihi Syarat", color: "#b91c1c" };
+      : { label: "Penyimpangan (TMS)", color: "#b91c1c" };
   }
   if (value < limit.alert) return { label: "Terkendali", color: "#15803d" };
   if (value < limit.action) return { label: "Alert", color: "#b45309" };
-  if (value < limit.syarat) return { label: "Action", color: "#c2410c" };
-  return { label: "Melebihi Syarat", color: "#b91c1c" };
+  if (value < limit.syarat) return { label: "OOT", color: "#c2410c" };
+  return { label: "Penyimpangan (TMS)", color: "#b91c1c" };
 }
 
 function ChartDot({ cx, cy, payload, limit }) {
@@ -990,7 +1007,7 @@ function EntryRow({ entry, entries = [], masterRooms, onChange, onDelete, readOn
             !isResampling(e) &&
             e.tanggal &&
             e.roomName &&
-            PARAM_DEFS.some((p) => getStatus(e[p.key], p.key, e.kelas).level >= 2)
+            PARAM_DEFS.some((p) => getStatus(e[p.key], p.key, e.kelas).level >= RESAMPLE_LEVEL)
         )
         .sort((a, b) => String(a.tanggal).localeCompare(String(b.tanggal))),
     [entries]
@@ -1010,9 +1027,21 @@ function EntryRow({ entry, entries = [], masterRooms, onChange, onDelete, readOn
           </div>
         </td>
         <td className="px-2 py-1.5"><span className="inline-block w-14 rounded bg-slate-100 px-2 py-1 text-center text-sm font-medium text-slate-600">{entry.kelas}</span></td>
-        {["settle", "contact", "air"].map((p) => (
-          <td key={p} className="px-2 py-1.5 text-center text-sm text-slate-600">{entry[p] === null || entry[p] === undefined || entry[p] === "" ? "-" : entry[p]}</td>
-        ))}
+        {["settle", "contact", "air"].map((p) => {
+          const kosong = entry[p] === null || entry[p] === undefined || entry[p] === "";
+          const st = getStatus(entry[p], p, entry.kelas);
+          return (
+            <td key={p} className="px-2 py-1.5 text-center text-sm">
+              {kosong ? (
+                <span className="text-slate-400">-</span>
+              ) : (
+                <span className="inline-block rounded px-2 py-0.5 font-semibold" style={{ background: st.bg, color: st.color }} title={st.label}>
+                  {entry[p]}
+                </span>
+              )}
+            </td>
+          );
+        })}
         <td className="px-2 py-1.5" />
       </tr>
     );
@@ -1102,17 +1131,34 @@ function EntryRow({ entry, entries = [], masterRooms, onChange, onDelete, readOn
             </span>
           )}
         </td>
-        {["settle", "contact", "air"].map((p) => (
-          <td key={p} className="px-2 py-1.5">
-            <input type="text" className="w-20 rounded border border-slate-200 px-2 py-1 text-center text-sm"
-              placeholder="-" value={entry[p] === null || entry[p] === undefined ? "" : entry[p]}
-              onChange={(ev) => {
-                const raw = ev.target.value.trim();
-                const val = raw === "-" ? null : raw;
-                onChange({ ...entry, [p]: val });
-              }} />
-          </td>
-        ))}
+        {["settle", "contact", "air"].map((p) => {
+          // Warna mengikuti persyaratan kelas ruangan dan langsung berubah
+          // begitu nilainya diketik, jadi analis/supervisor tahu statusnya
+          // saat itu juga tanpa perlu menyimpan dulu.
+          const st = getStatus(entry[p], p, entry.kelas);
+          const berwarna = st.level >= 1;
+          return (
+            <td key={p} className="px-2 py-1.5">
+              <input
+                type="text"
+                className="w-20 rounded border px-2 py-1 text-center text-sm font-semibold outline-none"
+                style={berwarna
+                  ? { borderColor: st.dot, background: st.bg, color: st.color }
+                  : { borderColor: "#e2e8f0", background: "#ffffff", color: "#334155" }}
+                title={berwarna ? st.label : undefined}
+                placeholder="-"
+                value={entry[p] === null || entry[p] === undefined ? "" : entry[p]}
+                onChange={(ev) => {
+                  const raw = ev.target.value.trim();
+                  const val = raw === "-" ? null : raw;
+                  onChange({ ...entry, [p]: val });
+                }} />
+              {st.level >= 2 && (
+                <p className="mt-0.5 text-center text-[10px] font-semibold" style={{ color: st.color }}>{st.label}</p>
+              )}
+            </td>
+          );
+        })}
         <td className="px-2 py-1.5 text-center">
           {canDelete && (
             <button onClick={onDelete} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500" title="Hapus baris">
@@ -1133,7 +1179,7 @@ function EntryRow({ entry, entries = [], masterRooms, onChange, onDelete, readOn
                 value={entry.refTanggal ? `${entry.refTanggal}|${entry.roomName}|${entry.kelas}` : ""}
                 onChange={(ev) => handleRefPick(ev.target.value)}
               >
-                <option value="">-- pilih titik yang menyimpang --</option>
+                <option value="">-- pilih titik OOT/penyimpangan --</option>
                 {deviationOptions.map((e) => (
                   <option key={refKey(e)} value={refKey(e)}>
                     {fullDateID(e.tanggal)} — {e.roomName} (Kelas {e.kelas})
@@ -1150,7 +1196,7 @@ function EntryRow({ entry, entries = [], masterRooms, onChange, onDelete, readOn
             </div>
             {!entry.refTanggal && (
               <p className="mt-1 text-[11px] text-amber-700">
-                Belum menunjuk sampling asli — penyimpangan tidak akan tercatat sebagai sudah ditindaklanjuti.
+                Belum menunjuk sampling asli — hasil ini tidak akan tercatat sebagai tindak lanjut dari titik manapun.
               </p>
             )}
           </td>
@@ -1260,7 +1306,7 @@ const STATUS_ACCENT = { 0: "#cbd5e1", 1: "#22c55e", 2: "#22c55e", 3: "#f97316", 
 //   pengingat Pengkajian EM sengaja dilewati — periode itu belum selesai
 //   disampling sehingga datanya memang wajar belum lengkap, dan kalau
 //   ditampilkan hanya jadi peringatan palsu setiap awal bulan. Temuan nyata
-//   (Alert/Action/Melebihi Syarat) tetap ditampilkan karena itu berlaku
+//   (OOT dan penyimpangan/TMS) tetap ditampilkan karena itu berlaku
 //   kapan pun.
 // - Saat periode yang dipilih adalah bulan berjalan, periode sebelumnya ikut
 //   dievaluasi penuh supaya pengingat "bulan lalu belum lengkap" tetap
@@ -1291,27 +1337,22 @@ function buildNotifications(statusByMonth, months, session, runningMonth) {
         return;
       }
 
+      // Hasil yang hanya mencapai Alert Limit TIDAK dinotifikasi — nilai di
+      // rentang itu masih dianggap aman dan cukup dikoordinasikan internal QC.
       const level = st.level || 0;
       if (level >= 4) {
         items.push({
           ...base,
           type: "critical",
-          title: "Hasil melebihi batas Syarat",
-          desc: `Pada periode ${periode} terdapat titik yang melampaui batas Syarat (spesifikasi). Perlu investigasi dan pengujian ulang (re-sampling).`,
+          title: "Penyimpangan — hasil melebihi batas Syarat",
+          desc: `Pada periode ${periode} terdapat titik yang melampaui batas Syarat (spesifikasi). Proses pada area terkait dihentikan sementara, dilakukan investigasi dan perbaikan, lalu sampling ulang sampai hasilnya memenuhi syarat.`,
         });
       } else if (level === 3) {
         items.push({
           ...base,
           type: "pending",
-          title: "Hasil mencapai Action Limit",
-          desc: `Hasil periode ${periode} masih di bawah batas Syarat, namun perlu dievaluasi pada hasil pengujian periode berikutnya.`,
-        });
-      } else if (level === 2) {
-        items.push({
-          ...base,
-          type: "pending",
-          title: "Hasil mencapai Alert Limit",
-          desc: `Hasil periode ${periode} masih di bawah batas Syarat, namun perlu dipantau agar tidak menunjukkan tren peningkatan.`,
+          title: "OOT — hasil melampaui Action Limit",
+          desc: `Hasil periode ${periode} melampaui Action Limit namun masih di bawah batas Syarat. Perlu sampling ulang segera dan bila perlu investigasi ringan.`,
         });
       }
 
@@ -1365,8 +1406,8 @@ function DashboardOverview({ monthKey, setMonthKey, statusIndex, loadingStatus, 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <StatCard icon={<LayoutGrid size={17} />} iconColor="#1d4ed8" tint="#dbeafe" border="#bfdbfe" value={FACILITIES.length} label="Total Fasilitas" />
         <StatCard icon={<CheckCircle2 size={17} />} iconColor="#15803d" tint="#dcfce7" border="#bbf7d0" value={terkendaliCount} label="Terkendali" />
-        <StatCard icon={<AlertTriangle size={17} />} iconColor="#c2410c" tint="#ffedd5" border="#fed7aa" value={perluCount} label="Perlu Perhatian" />
-        <StatCard icon={<XOctagon size={17} />} iconColor="#b91c1c" tint="#fee2e2" border="#fecaca" value={tmsCount} label="Melebihi Syarat" />
+        <StatCard icon={<AlertTriangle size={17} />} iconColor="#c2410c" tint="#ffedd5" border="#fed7aa" value={perluCount} label="OOT (Action Limit)" />
+        <StatCard icon={<XOctagon size={17} />} iconColor="#b91c1c" tint="#fee2e2" border="#fecaca" value={tmsCount} label="Penyimpangan (TMS)" />
         <StatCard icon={<FileQuestion size={17} />} iconColor="#475569" tint="#f1f5f9" border="#e2e8f0" value={belumAdaCount} label="Belum Ada Data" />
       </div>
 
@@ -1716,80 +1757,13 @@ function ReportEMPanel({ facilityKey, entriesForMonth, monthKey, session, token,
 /* =========================================================================
    8. HALAMAN PENGKAJIAN QA
    ========================================================================= */
-// Rekap seluruh titik yang menyentuh Alert/Action Limit atau melebihi batas
-// Syarat pada periode ini, beserta status tindak lanjutnya. Panel ini sengaja
-// ikut tercetak: saat inspeksi, inilah bukti bahwa setiap penyimpangan sudah
-// ditindaklanjuti dengan uji ulang dan bagaimana hasilnya.
-function DeviationPanel({ entries }) {
-  const items = useMemo(() => deviationSummary(entries), [entries]);
-  if (items.length === 0) return null;
-
-  const belum = items.filter((it) => !it.resolved).length;
-
-  return (
-    <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-bold text-slate-700">Tindak Lanjut Penyimpangan (Uji Ulang)</h3>
-        <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${belum > 0 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
-          {belum > 0 ? `${belum} belum ditindaklanjuti` : "Seluruhnya sudah ditindaklanjuti"}
-        </span>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
-              <th className="px-3 py-2">Tanggal</th>
-              <th className="px-3 py-2">Ruangan</th>
-              <th className="px-3 py-2">Parameter</th>
-              <th className="px-3 py-2 text-center">Hasil Awal</th>
-              <th className="px-3 py-2">Tindak Lanjut</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it, i) => {
-              const awal = getStatus(it.value, it.paramKey, it.kelas);
-              return (
-                <tr key={i} className="border-b border-slate-100 align-top">
-                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{fullDateID(it.tanggal)}</td>
-                  <td className="px-3 py-2 text-slate-600">{it.roomName} <span className="text-slate-400">(Kelas {it.kelas})</span></td>
-                  <td className="px-3 py-2 text-slate-600">{it.paramLabel}</td>
-                  <td className="px-3 py-2 text-center">
-                    <span className="rounded px-2 py-0.5 text-xs font-bold" style={{ color: awal.color, background: awal.bg }}>
-                      {displayValue(it.value, it.kelas, it.paramKey)} · {awal.label}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">
-                    {it.resolved ? (
-                      <span className="text-xs text-emerald-700">
-                        Uji ulang {fullDateID(it.resample.tanggal)} — hasil{" "}
-                        <b>{displayValue(it.resample[it.paramKey], it.resample.kelas, it.paramKey)}</b>, memenuhi syarat.
-                        {it.resample.catatan ? ` ${it.resample.catatan}` : ""}
-                      </span>
-                    ) : it.openResample ? (
-                      <span className="text-xs text-red-700">
-                        Uji ulang {fullDateID(it.openResample.tanggal)} — hasil{" "}
-                        <b>{displayValue(it.openResample[it.paramKey], it.openResample.kelas, it.paramKey)}</b>, masih menyimpang.
-                        Perlu investigasi lanjutan.
-                      </span>
-                    ) : (
-                      <span className="text-xs text-amber-700">Belum ada hasil uji ulang yang dicatat.</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, session, token }) {
   const facility = FACILITIES.find((f) => f.key === facilityKey);
 
-  const canInputQC = hasAccess(session, "Staff", "QC") || hasAccess(session, "Supervisor", "QA");
-  const canDeleteQC = hasAccess(session, "Supervisor", "QC") || hasAccess(session, "Supervisor", "QA");
+  // Input data hasil pengujian adalah tanggung jawab QC — QA tidak ikut mengisi,
+  // supaya pemisahan peran antara yang menguji dan yang mengkaji tetap jelas.
+  const canInputQC = hasAccess(session, "Staff", "QC");
+  const canDeleteQC = hasAccess(session, "Supervisor", "QC");
   const canEditQA = hasAccess(session, "Supervisor", "QA");
   const canApproveFinal = hasAccess(session, "Manager", "QA");
   const isAdmin = session?.role === "Administrator";
@@ -2054,11 +2028,9 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
           accessNote={
             isLocked
               ? "Pengkajian EM bulan ini sudah di-approve final — data terkunci, hubungi Administrator"
-              : session ? "Staff/Supervisor/Manager QC atau Supervisor/Manager QA yang bisa mengisi data" : "Login untuk mengisi data"
+              : session ? "Hanya personil QC (Staff/Supervisor/Manager) yang bisa mengisi data" : "Login untuk mengisi data"
           } />
       </div>
-
-      <DeviationPanel entries={entries} />
 
       <div className="mb-5 rounded-xl border border-slate-200 bg-white p-5 print-card">
         <h3 className="mb-3 text-sm font-bold text-slate-700">Persyaratan</h3>
@@ -2145,26 +2117,6 @@ function FacilityDetail({ facilityKey, monthKey, setMonthKey, onBack, onSaved, s
             <h3 className="mb-3 text-sm font-bold text-slate-700">Kesimpulan Umum</h3>
             <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
               rows={8} value={narrative.kesimpulanUmum} onChange={(ev) => setNarrative({ ...narrative, kesimpulanUmum: ev.target.value })} readOnly={!canEditQA || isLocked} />
-          </div>
-
-          {/* Dua kolom di bawah ini sebenarnya sudah lama tersimpan di tab
-              Laporan_Narasi, tapi dulu tidak pernah punya tempat di layar
-              sehingga selalu kosong. Sekarang bisa diisi & ikut tercetak. */}
-          <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-white p-5 print-card">
-              <h3 className="mb-1 text-sm font-bold text-slate-700">Tindak Lanjut</h3>
-              <p className="mb-2 text-[11px] text-slate-400">Opsional — tindakan yang akan/sudah dilakukan atas temuan periode ini.</p>
-              <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
-                rows={5} value={narrative.tindakLanjut} placeholder="mis. peninjauan jadwal sanitasi pada area terkait…"
-                onChange={(ev) => setNarrative({ ...narrative, tindakLanjut: ev.target.value })} readOnly={!canEditQA || isLocked} />
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-5 print-card">
-              <h3 className="mb-1 text-sm font-bold text-slate-700">Rekomendasi Akhir</h3>
-              <p className="mb-2 text-[11px] text-slate-400">Opsional — saran perbaikan atau pemantauan untuk periode berikutnya.</p>
-              <AutoTextarea className="w-full rounded-lg border border-slate-200 p-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
-                rows={5} value={narrative.rekomendasiAkhir} placeholder="mis. evaluasi ulang hasil pada periode berikutnya…"
-                onChange={(ev) => setNarrative({ ...narrative, rekomendasiAkhir: ev.target.value })} readOnly={!canEditQA || isLocked} />
-            </div>
           </div>
 
           <div className="mb-8 rounded-xl border border-slate-200 bg-white p-5 print-card">

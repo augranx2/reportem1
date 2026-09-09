@@ -1107,10 +1107,14 @@ function isResampling_(entry) {
   return entry && entry.tipe === "resampling";
 }
 
+// Batas level yang mewajibkan sampling ulang: 3 = melampaui Action Limit (OOT).
+// Hasil yang hanya mencapai Alert Limit (level 2) masih dianggap aman.
+const RESAMPLE_LEVEL = 3;
+
 function paramStatus_(entries, entry, paramKey) {
   const originalLevel = levelFor_(entry[paramKey], paramKey, entry.kelas);
   const base = { level: originalLevel, originalLevel: originalLevel, resolved: false };
-  if (originalLevel < 2 || isResampling_(entry)) return base;
+  if (originalLevel < RESAMPLE_LEVEL || isResampling_(entry)) return base;
 
   const list = (entries || [])
     .filter(function (e) {
@@ -1146,7 +1150,7 @@ function getStatusIndex_(month) {
         const st = paramStatus_(entries, e, p);
         if (st.level > maxLevel) maxLevel = st.level;
         if (st.resolved) adaPenyimpanganSelesai = true;
-        else if (st.originalLevel >= 2 && !isResampling_(e)) adaPenyimpanganTerbuka = true;
+        else if (st.originalLevel >= RESAMPLE_LEVEL && !isResampling_(e)) adaPenyimpanganTerbuka = true;
       });
     });
     // Info tambahan untuk Pusat Notifikasi di website: sampai mana progres

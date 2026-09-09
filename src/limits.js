@@ -41,13 +41,24 @@ export const MONTHS_ID = [
   "Juli", "Agustus", "September", "Oktober", "November", "Desember",
 ];
 
+// Istilah mengikuti pembagian tindak lanjut yang berlaku:
+// - Alert Limit  : masih aman/normal, cukup dikoordinasikan internal QC.
+// - Action Limit : OOT (Out of Trend) — perlu sampling ulang segera dan bila
+//                  perlu investigasi ringan, tetapi BUKAN penyimpangan karena
+//                  masih di bawah batas Syarat.
+// - > Syarat     : penyimpangan (TMS) — proses dihentikan sementara,
+//                  investigasi, perbaikan, lalu sampling ulang sampai MS.
 export const LEVEL_LABEL = {
   0: "N/A",
   1: "Terkendali",
   2: "Alert",
-  3: "Action",
-  4: "Melebihi Syarat",
+  3: "OOT",
+  4: "Penyimpangan (TMS)",
 };
+
+// Batas level yang mewajibkan sampling ulang. Alert Limit (level 2) sengaja
+// TIDAK termasuk — nilai di rentang itu masih dianggap aman.
+export const RESAMPLE_LEVEL = 3;
 
 // Warna per level status — dipakai badge tabel, titik grafik, dan pill status.
 export const LEVEL_STYLE = {
@@ -193,7 +204,7 @@ export function resamplesFor(entries, original, paramKey) {
 export function paramStatus(entries, entry, paramKey) {
   const originalLevel = getStatusLevel(entry[paramKey], paramKey, entry.kelas);
   const base = { level: originalLevel, originalLevel, resolved: false, resample: null, openResample: null };
-  if (originalLevel < 2 || isResampling(entry)) return base;
+  if (originalLevel < RESAMPLE_LEVEL || isResampling(entry)) return base;
 
   const list = resamplesFor(entries, entry, paramKey);
   if (list.length === 0) return base;
@@ -225,7 +236,7 @@ export function deviationSummary(entries) {
     if (isResampling(entry)) return;
     PARAM_DEFS.forEach((p) => {
       const st = paramStatus(entries, entry, p.key);
-      if (st.originalLevel < 2) return;
+      if (st.originalLevel < RESAMPLE_LEVEL) return;
       items.push({
         entry,
         paramKey: p.key,

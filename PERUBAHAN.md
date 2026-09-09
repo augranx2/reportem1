@@ -14,48 +14,58 @@
 
 ---
 
-## 0. Uji Ulang (Re-sampling)
+## 0. Tiga tingkat temuan, istilah, dan Sampling Ulang
 
-Hasil yang melampaui Alert/Action Limit atau batas Syarat kini bisa ditutup
-dengan mencatat hasil **uji ulang** — nilai aslinya **tidak dihapus dan tidak
-ditimpa**, karena jejak penyimpangan beserta tindak lanjutnya justru itu yang
-dicari saat inspeksi BPOM.
+Istilah dan tindak lanjut sekarang dibedakan tegas menjadi tiga tingkat:
 
-**Cara pakai:** pada tabel Input Data Bulanan, tambah baris baru, ubah jenisnya
-dari *Sampling rutin* menjadi **Uji ulang**, lalu pilih titik sampling asli yang
-diulang dari daftar dropdown (ruangan & kelasnya ikut tersalin otomatis). Isi
-tanggal uji ulang — boleh hari yang sama, boleh hari berikutnya — beserta
-hasilnya dan catatan tindakan yang dilakukan.
+| Kondisi | Sebutan | Tindak lanjut |
+|---|---|---|
+| Mencapai **Alert Limit** (masih di bawah Action Limit) | Terkendali (Alert Limit) | Masih aman. Tidak ada tindakan khusus — cukup dikoordinasikan di internal QC sebagai informasi awal. **Tidak memicu notifikasi QA.** |
+| Melampaui **Action Limit**, masih di bawah batas Syarat | **OOT (Out of Trend)** — bukan penyimpangan | Sampling ulang segera, investigasi ringan bila perlu. Notifikasi QA muncul. |
+| Melampaui **batas Syarat** | **Penyimpangan (TMS)** | Proses dihentikan sementara, investigasi + perbaikan, lalu sampling ulang sampai memenuhi syarat. Notifikasi QA muncul. |
 
-**Efeknya:**
-- Kalau hasil uji ulang **memenuhi syarat** → penyimpangan dinyatakan selesai.
-  Status fasilitas kembali Terkendali dan notifikasinya hilang, tapi baris
-  aslinya tetap tampil dengan label *"Sudah diuji ulang — memenuhi syarat"*.
-- Kalau hasil uji ulang **masih menyimpang** → penyimpangan tetap terbuka dan
-  ditandai perlu investigasi lanjutan.
-- Kalau **belum ada uji ulang** → tetap muncul sebagai temuan yang belum
-  ditindaklanjuti.
-- Penilaian dilakukan **per parameter**, jadi kalau yang menyimpang hanya Cawan
-  Papar, cukup parameter itu yang perlu hasil uji ulangnya.
-- Kalau ada beberapa kali uji ulang, yang dipakai adalah **hasil terakhir**.
+Istilah ini konsisten di semua tempat: badge status, legenda grafik, kartu
+Dashboard Global, notifikasi, dan narasi.
 
-**Panel baru "Tindak Lanjut Penyimpangan (Uji Ulang)"** di halaman fasilitas
-merekap semua titik yang menyimpang beserta status tindak lanjutnya, dan ikut
-tercetak — inilah bukti ringkas untuk inspeksi.
+**Sampling ulang.** Hasil OOT/penyimpangan ditutup dengan mencatat hasil
+sampling ulang — nilai aslinya **tidak dihapus dan tidak ditimpa**. Caranya: di
+tabel Input Data Bulanan, tambah baris baru, ubah jenisnya jadi **Uji ulang**,
+lalu pilih titik asli yang diulang dari dropdown (ruangan & kelasnya tersalin
+otomatis). Boleh hari yang sama maupun hari berikutnya.
 
-**Narasi ikut menyesuaikan.** Pembahasan per kelas mendapat bagian *"Tindak
-Lanjut dan Uji Ulang"* yang menyebut tanggal dan hasil uji ulangnya. Kesimpulan
-umum juga berubah: kalau semua temuan sudah ditutup, narasinya berbunyi bahwa
-uji ulang **telah dilakukan** dan hasilnya kembali memenuhi persyaratan, bukan
-lagi menyuruh melakukan re-sampling. Instruksi yang sama diberikan ke generator
-AI supaya narasi AI tidak salah tulis.
+- Hasil sampling ulang **memenuhi syarat** → temuan selesai; status fasilitas
+  kembali terkendali, notifikasi hilang, baris aslinya tetap tampil dengan label
+  *"Sudah diuji ulang — memenuhi syarat"*.
+- **Masih di luar batas** → temuan tetap terbuka, perlu investigasi lanjutan.
+- Penilaian **per parameter**; kalau berkali-kali, yang dipakai hasil terakhir.
+- Hasil Alert Limit tidak masuk daftar kandidat uji ulang karena memang tidak
+  memerlukannya.
+
+**Narasi.** Seluruh alur temuan — OOT/TMS, sampling ulang, sampai penutupannya —
+dibahas **menyatu di dalam pembahasan parameter masing-masing** (Settle Plate /
+Contact Plate / Air Sampler). Tidak ada lagi bagian terpisah "Tindak Lanjut" atau
+"Rekomendasi Akhir". Prompt generator AI diberi ketentuan yang sama supaya narasi
+AI tidak salah istilah dan tidak menyuruh sampling ulang untuk temuan yang sudah
+selesai.
 
 **Perubahan struktur data:** tab `Data_<Fasilitas>` bertambah 3 kolom —
 `Tipe`, `RefTanggal`, `Catatan` (kolom H, I, J). Header ini **ditulis otomatis**
-saat penyimpanan pertama setelah update, jadi tidak perlu diedit manual. Baris
-lama yang hanya 7 kolom tetap terbaca dan otomatis dianggap sampling rutin.
+saat penyimpanan pertama setelah update. Baris lama yang hanya 7 kolom tetap
+terbaca dan dianggap sampling rutin.
 
-## 0b. Data pengujian sekarang wajib login
+## 0a. Input data & pewarnaan nilai
+
+- **Input data hasil pengujian sekarang khusus personil QC** (Staff, Supervisor,
+  Manager QC). QA tidak lagi bisa mengisi, supaya pemisahan peran antara yang
+  menguji dan yang mengkaji tetap jelas. Penghapusan baris tersimpan: Supervisor
+  QC ke atas.
+- **Nilai berwarna otomatis saat diketik** mengikuti persyaratan kelas
+  ruangannya — hijau memenuhi syarat, kuning Alert, oranye OOT, merah
+  penyimpangan — lengkap dengan label kecil di bawah kolom untuk Alert ke atas.
+  Analis/supervisor langsung tahu statusnya tanpa perlu menyimpan dulu. Tabel
+  mode lihat-saja (data terkunci) juga ikut berwarna.
+
+## 0b. Data pengujian sekarang wajib login## 0b. Data pengujian sekarang wajib login
 
 Sebelumnya seluruh data bisa dibaca **tanpa akun sama sekali** — bukan hanya di
 tampilan web ("mode publik"), tapi juga dengan membuka URL `/exec` Apps Script
